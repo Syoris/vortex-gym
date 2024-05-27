@@ -16,7 +16,7 @@ class VX_Interface(BaseModel, ABC):
 class VortexEnv:
     def __init__(
         self,
-        h=0.001,
+        h=0.01,
         config_file='config.vxc',
         content_file='Kinova Gen2 Unjamming/Scenes/kinova_peg-in-hole.vxscene',
         inputs_interface=VX_Interface(),
@@ -44,19 +44,23 @@ class VortexEnv:
         self.content_file = ASSETS_DIR / self.content_file_
 
         # Create the Vortex Application
-        self.vx_interface = VortexInterface()
-        self.vx_interface.create_application(self.setup_file)
+        self.vx = VortexInterface()
+        self.vx.create_application(self.setup_file)
 
-        self.vx_interface.load_scene(self.content_file)
+        self.vx.load_scene(self.content_file)
 
-        self.vx_interface.load_display()
-        self.vx_interface.render_display(active=True)
+        self.h_sim_ = self.vx.get_simulation_time_step()
+        if self.h != self.h_sim_:
+            raise ValueError(f'Simulation time step mismatch between application and config: {self.h} != {self.h_sim_}')
+
+        self.vx.load_display()
+        self.vx.render_display(active=True)
 
     def step(self):
         """To step the simulation"""
         # self._send_joint_target_vel(self.command)
 
-        self.vx_interface.app.update()
+        self.vx.app.update()
 
-        self.sim_time = self.vx_interface.app.getSimulationTime()
+        self.sim_time = self.vx.app.getSimulationTime()
         # self.obs = self._get_robot_state()
