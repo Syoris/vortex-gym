@@ -1,4 +1,4 @@
-from vortex_gym.VortexEnv import VortexEnv
+from vortex_gym.vortex_env import VortexEnv
 
 vortex_env = VortexEnv()
 

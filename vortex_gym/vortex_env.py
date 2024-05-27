@@ -5,14 +5,6 @@ from pathlib import Path
 from vortex_gym import ASSETS_DIR
 
 
-class VX_Interface(BaseModel, ABC):
-    """Abstract class for a vortex interface. To list the name of the interface in the vortex scene.
-    Here, interface intends to be the input, output, or parameter defined .
-    """
-
-    ...
-
-
 class VortexEnv:
     def __init__(
         self,

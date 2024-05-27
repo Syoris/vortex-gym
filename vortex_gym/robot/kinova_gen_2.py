@@ -10,7 +10,7 @@ import pandas as pd
 from pyvortex.vortex_interface import VortexInterface, AppMode
 # from peg_in_hole.settings import app_settings
 
-from vortex_gym.robot.RobotBase import RobotBase
+from vortex_gym.robot.robot_base import RobotBase
 from vortex_gym import ASSETS_DIR, ROBOT_CFG_DIR
 
 logger = logging.getLogger(__name__)
