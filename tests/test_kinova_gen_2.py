@@ -1,6 +1,7 @@
 import pytest
+import yaml
 
-from vortex_gym import ASSETS_DIR
+from vortex_gym import ASSETS_DIR, ROBOT_CFG_DIR
 from vortex_gym.robot.kinova_gen_2 import KinovaGen2
 
 from pyvortex.vortex_env import VortexEnv
@@ -50,7 +51,7 @@ def vortex_env():
         content_file=content_file,
         inputs_interface=inputs_interface,
         outputs_interface=outputs_interface,
-        viewpoints=['Global', 'Perspective'],
+        viewpoints=['Global'],
     )
 
     vortex_env.set_app_mode(AppMode.SIMULATING)
@@ -63,18 +64,42 @@ class TestKinovaGen2:
     def test_init(self, vortex_env):
         kinova_robot = KinovaGen2(vortex_env)
 
+        # Check __init__ ok
         assert isinstance(kinova_robot, KinovaGen2)
 
-    # def test_reset(vortex_env):
-    #     kinova_robot = KinovaGen2(vortex_env)
+    def test_load_config(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
 
-    #     kinova_robot.reset()
+        # Check .yaml file loaded
+        robot_cfg = kinova_robot.robot_cfg
 
-    #     assert True
+        # Load expected config file
+        with open(ROBOT_CFG_DIR / 'KinovaGen2.yaml', 'r') as file:
+            expected_cfg = yaml.safe_load(file)
 
-    # test config
+        assert robot_cfg == expected_cfg
 
-    # test get_state
+    def test_update_state(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
+
+        joints = kinova_robot.joints
+        print(joints)
+
+        assert kinova_robot.joints.j2.angle != 0.0
+        assert kinova_robot.joints.j4.angle != 0.0
+        assert kinova_robot.joints.j6.angle != 0.0
+
+        assert kinova_robot.joints.j2.vel != 0.0
+        assert kinova_robot.joints.j4.vel != 0.0
+        assert kinova_robot.joints.j6.vel != 0.0
+
+        assert kinova_robot.joints.j2.torque != 0.0
+        assert kinova_robot.joints.j4.torque != 0.0
+        assert kinova_robot.joints.j6.torque != 0.0
+
+        assert kinova_robot.joints.j2.vel_cmd == 0.0
+        assert kinova_robot.joints.j4.vel_cmd == 0.0
+        assert kinova_robot.joints.j6.vel_cmd == 0.0
 
     # test set_state
 
