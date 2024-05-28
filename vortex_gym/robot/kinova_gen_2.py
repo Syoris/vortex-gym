@@ -7,11 +7,12 @@ import logging
 from omegaconf import OmegaConf
 import pandas as pd
 
-from pyvortex.vortex_interface import VortexInterface, AppMode
+from pyvortex.vortex_env import VortexEnv
+from pyvortex.vortex_classes import AppMode, VortexInterface
 # from peg_in_hole.settings import app_settings
 
 from vortex_gym.robot.robot_base import RobotBase
-from vortex_gym import ASSETS_DIR, ROBOT_CFG_DIR
+from vortex_gym import ROBOT_CFG_DIR
 
 logger = logging.getLogger(__name__)
 # robot_logger = logging.getLogger('robot_state')
@@ -51,36 +52,18 @@ VX_OUT = VX_Outputs()
 
 
 class KinovaGen2(RobotBase):
-    metadata = {'render_modes': ['human'], 'render_fps': 60}
-
-    def __init__(self, render_mode=None, task_cfg=None):
+    def __init__(self, vx_env: VortexEnv):
         init_start_time = time.time()
 
         """Load config"""
         self._get_robot_config()
 
         # General params
-        self.task_cfg = task_cfg
-
         self.sim_time = 0.0
         self.step_count = 0  # Step counter
 
-        # self.env_seed = task_cfg.env.seed
-        # # Set the seed for the random number generator
-        # if self.env_seed is not None:
-        #     np.random.seed(self.env_seed)
-
         self._init_obs_space()
         self._init_action_space()
-        # self._init_reward()
-
-        """ RL Hyperparameters """
-        # Actions
-        # self.action_coeff = self.task_cfg.rl.hparams.action_coeff
-        self.action_coeff = 0.1
-
-        """ Sim Hyperparameters """
-        self._init_env_params()
 
         """ Robot Parameters """
         # Link lengths
@@ -90,37 +73,15 @@ class KinovaGen2(RobotBase):
         self.L78 = self.robot_cfg.links_length.L78  # from joint 6 to edge of EE where peg is attached, [m], 0.2188
         self.Ltip = self.robot_cfg.links_length.Ltip  # from edge of End-Effector to tip of peg, [m], 0.16
 
-        # Rendering
-        assert render_mode is None or render_mode in self.metadata['render_modes']
-        self.render_mode = render_mode
+        # Create a display window
+        self.vx_env = vx_env
 
-        # # Create a display window
-        # self.vx_interface.load_display()
-        # self.vx_interface.render_display(active=(self.render_mode == 'human'))
-        # # self.vx_interface.render_display(active=False)
+        # # Set parameters values. Done after going home so its not limited by joint torques
+        # self.vx_env.set_app_mode(AppMode.EDITING)
+        # for field, field_value in {**self.joints_range, **self.forces_range}.items():
+        #     self.vx_env.set_parameter(field, field_value)
 
-        # Initialize Robot position
-        self.df = pd.DataFrame()
-        self.go_home()
-
-        self.df.set_index('time', inplace=True)
-        # self.df.to_csv('robot_state_old.csv')
-
-        # Set parameters values. Done after going home so its not limited by joint torques
-        self.vx_interface.set_app_mode(AppMode.EDITING)
-        for field, field_value in {**self.joints_range, **self.forces_range}.items():
-            self.vx_interface.set_parameter(field, field_value)
-
-        # Save the state
-        self.vx_interface.save_current_frame()
-        self.vx_interface.set_app_mode(AppMode.SIMULATING)
-
-        """ Finalize setup """
-        self.sim_completed = False
-
-        self.reset()
-
-        print(f'Environment initialized. Time: {time.time() - init_start_time} sec')
+        print(f'KinovaGen2 initialized. Time: {time.time() - init_start_time} sec')
 
     def _get_robot_config(self):
         """Load robot config from .yaml file"""
@@ -205,37 +166,14 @@ class KinovaGen2(RobotBase):
             dtype=np.float32,
         )
 
-    def _init_reward(self):
-        reward_functions = {
-            'physical': self._reward_function_physical,
-            'distance': self._reward_function_distance,
-            'distance2': self._reward_function_distance2,
-            'distance_l2': self._reward_function_distance_l2,
-            'distance_l2_fix': self._reward_function_distance_l2_fix,
-            'distance_z': self._reward_function_distance_z,
-            'distance_z2': self._reward_function_distance_z2,
-            'sparse': self._reward_sparse,
-            'dist_rot_var': self._reward_function_dist_rot_var,
-            'shaped': self._reward_shaped,
-        }
-
-        self.reward_min_threshold = self.task_cfg.rl.reward.reward_min_threshold
-        self.min_height_threshold = self.task_cfg.rl.reward.min_height_threshold
-        self.reward_weight = self.task_cfg.rl.reward.reward_weight
-        self.reward_function_name = self.task_cfg.rl.reward.reward_function
-        assert (
-            self.reward_function_name in reward_functions.keys()
-        ), f'Invalid reward function: {self.reward_function_name}'
-        self.reward_func = reward_functions[self.reward_function_name]
-
     """ Actions """
 
     def go_home(self):
         """
         To bring the peg on top of the hole
         """
-        self.vx_interface.set_app_mode(AppMode.SIMULATING)
-        self.vx_interface.app.pause(False)
+        self.vx_env.set_app_mode(AppMode.SIMULATING)
+        self.vx_env.app.pause(False)
 
         """ Phase 1 """
         # Set joint velocities to initialize
@@ -281,163 +219,6 @@ class KinovaGen2(RobotBase):
         for i in range(self.pause_steps):
             self.update_sim()
 
-    def step(self, action):
-        """
-        Take one step. This is the main function of the environment.
-
-        The state of the robot is defined as all the measurements that the physical robot could obtain from sensors:
-        - position
-        - vel
-        - ideal vel
-        - torque
-
-        The info returned is the other information that might be useful for analysis, but not for learning:
-        - command
-        - plug force
-        - plug torque
-
-
-        Args:
-            action (np.Array): The action to take. Defined as a correction to the joint velocities
-
-        Returns:
-            obs (np.Array): The observation of the environment after taking the step
-            reward (float): The reward obtained after taking the step
-            sim_completed (bool): Flag indicating if the simulation is completed
-            done (bool): Flag indicating if the episode is done
-            info (dict): Additional information about the step
-        """
-        terminated = False
-
-        self.action = action
-        self.prev_j_vel = self.next_j_vel
-        self.next_j_vel = self._get_ik_vels(self.insertz, self.step_count, step_types=self.insertion_steps)
-
-        # Scale actions
-        act_j2 = self.action_coeff * self.action[0] * self.act_high_bound[0]
-        act_j6 = self.action_coeff * self.action[1] * self.act_high_bound[0]
-
-        j2_vel = self.next_j_vel[0] - act_j2
-        j4_vel = self.next_j_vel[1] + act_j6 - act_j2
-        j6_vel = self.next_j_vel[2] + act_j6
-
-        # Apply actions
-        self.command = np.array([j2_vel, j4_vel, j6_vel])
-
-        # Step the simulation
-        self.update_sim()
-
-        # Observations
-        # self.obs = self._get_robot_state()  # Done in update_sim
-
-        # Reward
-        reward = self.reward_func()
-
-        # Check limits
-        x_lims = [self.xpos_hole - 0.06, self.xpos_hole + 0.06]
-        z_lims = [0.0, 0.09]
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, _ = self._read_tips_pos_fk(joints_pos)
-        # if k_peg_x < x_lims[0] or k_peg_x > x_lims[1] or k_peg_z > z_lims[1]:
-        #     reward -= 100
-        #     terminated = True
-
-        # elif k_peg_z < z_lims[0]:
-        #     terminated = True
-
-        # Done flag
-        self.step_count += 1
-        if self.step_count >= self.insertion_steps:
-            self.sim_completed = True
-
-        # Info
-        info = self._get_step_info()  # plug force and torque
-
-        return self.obs, reward, self.sim_completed, terminated, info
-
-    def render(self):
-        if self.render_mode is None:
-            self.vx_interface.render_display(False)
-        elif self.render_mode == 'human':
-            self.vx_interface.render_display(True)
-
-    def reset(self, seed=None, options=None):
-        """Reset the environment.
-
-        Returns the robot states after the reset and information about the reset.
-
-        env_info:
-        - TODO: Add info about the reset
-            - Insertion misalignment
-            - Friction coefficient
-            ...
-
-        Args:
-            seed (_type_, optional): Defaults to None.
-            options (_type_, optional): _description_. Defaults to None.
-
-        Returns:
-            obs: Robot state
-            env_info (dict): Information about the env after reset
-        """
-        logger.debug('Reseting env')
-
-        # We need the following line to seed self.np_random
-        super().reset(seed=seed)
-
-        # Random parameters
-        # joint 6 misalignment, negative and positive
-        self.insertion_misalign = np.random.uniform(self.min_misalign, self.max_misalign)
-        # print('Insertion misalignment: ' + str(self.insertion_misalign))
-
-        # Reset Robot
-        self.vx_interface.reset_saved_frame()
-
-        # Reset parameters
-        self.step_count = 0  # Step num in the episode
-        self.sim_completed = False
-
-        env_info = {
-            'insertion_misalignment': self.insertion_misalign,
-        }
-
-        return self._get_robot_state(), env_info
-
-    def update_sim(self):
-        """To update the state of the robot.
-
-        Sends the action and reads the robot's state
-
-        """
-
-        self._send_joint_target_vel(self.command)
-
-        self.vx_interface.app.update()
-
-        self.sim_time = self.vx_interface.app.getSimulationTime()
-        self.obs = self._get_robot_state()
-
-        step_log = {
-            'time': self.sim_time,
-            'j2_pos': self.obs[0],
-            'j4_pos': self.obs[1],
-            'j6_pos': self.obs[2],
-            'j2_vel': self.obs[3],
-            'j4_vel': self.obs[4],
-            'j6_vel': self.obs[5],
-            'j2_ideal_vel': self.obs[6],
-            'j4_ideal_vel': self.obs[7],
-            'j6_ideal_vel': self.obs[8],
-            'j2_torque': self.obs[9],
-            'j4_torque': self.obs[10],
-            'j6_torque': self.obs[11],
-            'j2_cmd': self.command[0],
-            'j4_cmd': self.command[1],
-            'j6_cmd': self.command[2],
-        }
-
-        self.df = pd.concat([self.df, pd.DataFrame(step_log, index=[0])], ignore_index=True)
-
     """ Vortex interface functions """
 
     def _get_robot_state(self) -> np.array:
@@ -459,54 +240,31 @@ class KinovaGen2(RobotBase):
 
         return np.concatenate((joint_poses, joint_vel, joint_ideal_vel, joint_torques), dtype=np.float32)
 
-    def _get_step_info(self) -> dict:
-        """Get info about the robot
-        - Command
-        - Plug force
-        - Plug torque
-        - Insertion depth
-
-        Returns:
-            dict: Info about the robot
-        """
-
-        insert_depth = self._get_insertion_depth()
-        insert_depth[2] = np.rad2deg(insert_depth[2])
-
-        info = {
-            'command': self.command,
-            'plug_force': self._get_plug_force(),
-            'plug_torque': self._get_plug_torque(),
-            'insertion_depth': insert_depth,
-        }
-
-        return info
-
     def _readJpos(self):
-        j2_pos = self.vx_interface.get_output(VX_OUT.j2_pos_real)
-        j4_pos = self.vx_interface.get_output(VX_OUT.j4_pos_real)
-        j6_pos = self.vx_interface.get_output(VX_OUT.j6_pos_real)
+        j2_pos = self.vx_env.get_output(VX_OUT.j2_pos_real)
+        j4_pos = self.vx_env.get_output(VX_OUT.j4_pos_real)
+        j6_pos = self.vx_env.get_output(VX_OUT.j6_pos_real)
 
         return np.array([j2_pos, j4_pos, j6_pos], dtype=np.float32)
 
     def _readJvel(self):
-        j2_vel = self.vx_interface.get_output(VX_OUT.j2_vel_real)
-        j4_vel = self.vx_interface.get_output(VX_OUT.j4_vel_real)
-        j6_vel = self.vx_interface.get_output(VX_OUT.j6_vel_real)
+        j2_vel = self.vx_env.get_output(VX_OUT.j2_vel_real)
+        j4_vel = self.vx_env.get_output(VX_OUT.j4_vel_real)
+        j6_vel = self.vx_env.get_output(VX_OUT.j6_vel_real)
 
         return np.array([j2_vel, j4_vel, j6_vel], dtype=np.float32)
 
     def _readJtorque(self):
-        j2_t = self.vx_interface.get_output(VX_OUT.j2_torque)
-        j4_t = self.vx_interface.get_output(VX_OUT.j4_torque)
-        j6_t = self.vx_interface.get_output(VX_OUT.j6_torque)
+        j2_t = self.vx_env.get_output(VX_OUT.j2_torque)
+        j4_t = self.vx_env.get_output(VX_OUT.j4_torque)
+        j6_t = self.vx_env.get_output(VX_OUT.j6_torque)
 
         return np.array([j2_t, j4_t, j6_t], dtype=np.float32)
 
     def _readJvel_target(self):
-        j2_target = self.vx_interface.get_input(VX_IN.j2_vel_id)
-        j4_target = self.vx_interface.get_input(VX_IN.j4_vel_id)
-        j6_target = self.vx_interface.get_input(VX_IN.j6_vel_id)
+        j2_target = self.vx_env.get_input(VX_IN.j2_vel_id)
+        j4_target = self.vx_env.get_input(VX_IN.j4_vel_id)
+        j6_target = self.vx_env.get_input(VX_IN.j6_vel_id)
 
         return np.array([j2_target, j4_target, j6_target])
 
@@ -516,7 +274,7 @@ class KinovaGen2(RobotBase):
         Returns:
             np.array(1x3): [x, y, z]
         """
-        plug_force = self.vx_interface.get_output(VX_OUT.plug_force)
+        plug_force = self.vx_env.get_output(VX_OUT.plug_force)
         return np.array([plug_force.x, plug_force.y, plug_force.z])
 
     def _get_plug_torque(self) -> np.array:
@@ -525,13 +283,13 @@ class KinovaGen2(RobotBase):
         Returns:
             np.array: [x, y, z]
         """
-        plug_torque = self.vx_interface.get_output(VX_OUT.plug_torque)
+        plug_torque = self.vx_env.get_output(VX_OUT.plug_torque)
         return np.array([plug_torque.x, plug_torque.y, plug_torque.z])
 
     def _send_joint_target_vel(self, target_vels):
-        self.vx_interface.set_input(VX_IN.j2_vel_id, target_vels[0])
-        self.vx_interface.set_input(VX_IN.j4_vel_id, target_vels[1])
-        self.vx_interface.set_input(VX_IN.j6_vel_id, target_vels[2])
+        self.vx_env.set_input(VX_IN.j2_vel_id, target_vels[0])
+        self.vx_env.set_input(VX_IN.j4_vel_id, target_vels[1])
+        self.vx_env.set_input(VX_IN.j6_vel_id, target_vels[2])
 
     """ Utilities """
 
@@ -614,189 +372,3 @@ class KinovaGen2(RobotBase):
         J = [[a_x, b_x, c_x], [a_z, b_z, c_z], [-1.0, 1.0, -1.0]]
 
         return J
-
-    def _get_insertion_depth(self):
-        th_current = self._readJpos()
-        x, z, rot = self._read_tips_pos_fk(th_current)
-        return np.array([x, z, rot])
-
-    def get_params(self):
-        env_params = {
-            'task_name': 'RPL_Insert_3DoF',
-            'reward_function': self.reward_function_name,
-        }
-
-        return env_params
-
-    """ Reward Functions """
-
-    def _reward_function_physical(self):
-        joint_vels = self.obs[3:6]
-        joint_id_vels = self.obs[6:9]
-        joint_torques = self.obs[9:12]  # self.obs[0:3]
-
-        reward = self.reward_weight * (
-            -abs((joint_id_vels[0] - joint_vels[0]) * joint_torques[0])
-            - abs((joint_id_vels[1] - joint_vels[1]) * joint_torques[1])
-            - abs((joint_id_vels[2] - joint_vels[2]) * joint_torques[2])
-        )
-        return reward
-
-    # 2-norm squared, fixed
-    def _reward_function_distance(self):
-        k_goal = np.array([0.529, -0.007, 0.0156])
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        dist = np.sum(np.square(k_goal - k_peg))
-
-        reward = -dist
-
-        return reward
-
-    # 2-norm squared, var
-    def _reward_function_distance2(self):
-        z_goal = self.step_count * (self.insertz / self.insertion_steps)
-        z_start = 0.0853713472868764
-
-        k_goal = np.array([0.529, -0.007, z_start - z_goal])
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-        dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-
-        reward = -dist
-
-        return reward
-
-    # 2-norm, fix
-    def _reward_function_distance_l2_fix(self):
-        k_goal = np.array([0.529, -0.007, 0.0156])
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-        dist = np.linalg.norm(k_goal - k_peg)
-
-        reward = -dist
-
-        return reward
-
-    # 2-norm, var
-    def _reward_function_distance_l2(self):
-        z_goal = self.step_count * (self.insertz / self.insertion_steps)
-        z_start = 0.0853713472868764
-
-        k_goal = np.array([0.529, -0.007, z_start - z_goal])
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-        dist = np.linalg.norm(k_goal - k_peg)
-
-        reward = -dist
-
-        return reward
-
-    def _reward_function_distance_z(self):
-        """Reward from Deep Reinforcement Learning for High Precision Assembly Tasks (@Inoue2017)"""
-        # k_goal = np.array([0.529, -0.007, 0.0156])
-        k_peg_z_start = 0.0856
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg_dz = k_peg_z_start - k_peg_z
-
-        reward = -(abs(self.insertz - k_peg_dz)) / self.insertz
-
-        return reward
-
-    def _reward_function_distance_z2(self):
-        """Reward derived from Deep Reinforcement Learning for High Precision Assembly Tasks (@Inoue2017).
-        Instead of having a fix depth in z, it follows the IK solution"""
-
-        # k_goal = np.array([0.529, -0.007, 0.0156])
-        k_peg_z_start = 0.0856
-        z_goal = self.step_count * (self.insertz / self.insertion_steps)
-
-        joints_pos = self.obs[0:3]
-        _, k_peg_z, _ = self._read_tips_pos_fk(joints_pos)
-        k_peg_dz = k_peg_z_start - k_peg_z
-
-        reward = -(abs(z_goal - k_peg_dz))
-
-        return reward
-
-    def _reward_sparse(self):
-        """Sparse reward function"""
-        if self.step_count != 248:
-            return 0
-
-        else:
-            k_goal = np.array([0.529, -0.007, 0.0156])
-
-            joints_pos = self.obs[0:3]
-            k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-            k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-            # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-            dist = abs(np.linalg.norm(k_goal - k_peg))
-
-            if dist < 0.005:
-                return 1
-            else:
-                return -1
-
-    def _reward_function_dist_rot_var(self):
-        z_goal = self.step_count * (self.insertz / self.insertion_steps)
-        z_start = 0.0853713472868764
-
-        k_goal = np.array([0.529, -0.007, z_start - z_goal])
-        k_rot_goal = np.pi
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-        dist = abs(np.linalg.norm(k_goal - k_peg))
-
-        rot_err = abs(k_rot_goal - k_peg_rot)
-
-        reward = -(dist + rot_err)
-
-        return reward
-
-    def _reward_shaped(self):
-        # z_goal = self.step_count * (self.insertz / self.insertion_steps)
-        # z_start = 0.0853713472868764
-
-        k_goal = np.array([0.529, -0.007, 0.0156])
-        # k_rot_goal = np.pi
-
-        joints_pos = self.obs[0:3]
-        k_peg_x, k_peg_z, k_peg_rot = self._read_tips_pos_fk(joints_pos)
-        k_peg = np.array([k_peg_x, -0.007, k_peg_z])
-
-        # dist = np.sum(np.square(k_goal - k_peg))  # 2-norm square
-        l1_norm = np.linalg.norm(k_goal - k_peg, ord=1)
-        l2_norm = np.linalg.norm(k_goal - k_peg, ord=2)
-
-        inserting = k_peg_z < 0.08 and abs(k_peg_x - k_goal[0]) < 0.01
-
-        alpha = -100
-        beta = 0.002
-        phi = -0.1 if not inserting else 0.1
-        eps = 1e-6
-
-        reward = alpha * l1_norm + beta / (l2_norm + eps) + phi
-
-        return reward

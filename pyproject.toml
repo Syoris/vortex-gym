@@ -109,4 +109,5 @@ addopts = [
     "-s",
     "--import-mode=importlib",
     # "-n 1",
+    "-p no:faulthandler",
     ]
