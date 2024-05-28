@@ -415,6 +415,58 @@ files = [
 ]
 
 [[package]]
+name = "klampt"
+version = "0.9.0"
+description = "Python API to Klamp't, a package for robot modeling, simulating, planning, optimization, and visualization"
+optional = false
+python-versions = "*"
+files = [
+    {file = "Klampt-0.9.0-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:a4c794f9ab2f5f2d5d7d2fc00168252e02c7c3e84e5c49c4776166836ac57b84"},
+    {file = "Klampt-0.9.0-cp27-cp27m-manylinux2010_x86_64.whl", hash = "sha256:8b0f7baa2344be2b26c3d800fb85e46d41d6da4c2537f1faa06ca1354d05a253"},
+    {file = "Klampt-0.9.0-cp27-cp27mu-manylinux2010_x86_64.whl", hash = "sha256:b563a528f4484f2ec3a0af1676ff736cb9e09f73be0e36de79bfc1621628c0a8"},
+    {file = "Klampt-0.9.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7592bbb0a123623aa4b2a87f7c901f5568c5375af4799831dfabd77ecac6e71b"},
+    {file = "Klampt-0.9.0-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:e3289aafa380194d322b9004e246b1bf2f6a317de7758ba4471d67e5bff939b1"},
+    {file = "Klampt-0.9.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1a3d24675c76be739ec64118f9c0225214f5b792b226e1efb1966d8f8141b00f"},
+    {file = "Klampt-0.9.0-cp310-cp310-win32.whl", hash = "sha256:2df24dcf24369ed4f0496fe5125beaf70858dffb73bf0fb2f901be99b2a25f70"},
+    {file = "Klampt-0.9.0-cp310-cp310-win_amd64.whl", hash = "sha256:0fd5107e4732d11d65620f52b1d5c341782b0fef7b3683b7af7835f5e9446015"},
+    {file = "Klampt-0.9.0-cp311-cp311-win32.whl", hash = "sha256:69331f1f1c7532e1a3de875bd45c146b2a445e2ba1feaa554f287519e2fe5fc9"},
+    {file = "Klampt-0.9.0-cp311-cp311-win_amd64.whl", hash = "sha256:5688e0cc18205f97f232514bd63c0ba45c8d8d9a1a5016afda326bbfe44fc540"},
+    {file = "Klampt-0.9.0-cp35-cp35m-macosx_10_9_x86_64.whl", hash = "sha256:db8ec238b51043c80bf887a4d3df88fc36e35fc81f3e0af96c9ff8bd76054eea"},
+    {file = "Klampt-0.9.0-cp35-cp35m-manylinux2010_x86_64.whl", hash = "sha256:9227bb61edd9dfabf45cac2400fd374c6bacc3d5d467be22bee669d33119d7be"},
+    {file = "Klampt-0.9.0-cp35-cp35m-win32.whl", hash = "sha256:41c39782790319bb981e87811fc5bf6dc6b8ad20ed22209f9e23e2a5b81a5def"},
+    {file = "Klampt-0.9.0-cp35-cp35m-win_amd64.whl", hash = "sha256:a77f8db52fa5965280deb74ccb3e89120fa60d9a0881d9a34fa045972f7cad4e"},
+    {file = "Klampt-0.9.0-cp36-cp36m-manylinux2010_x86_64.whl", hash = "sha256:9dcdc6172006f41f5c2993751ff1645cd269c35d9f3d170b97d05e2eb7540069"},
+    {file = "Klampt-0.9.0-cp36-cp36m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:34d6fd449c214a8185e503ce5597902e8bc6bb82b803140e64f75652dbb98a00"},
+    {file = "Klampt-0.9.0-cp36-cp36m-win32.whl", hash = "sha256:d291361dd96f3b067984e5922f6d623e2039b40158a0e51f0f4f0a7c631c37d5"},
+    {file = "Klampt-0.9.0-cp36-cp36m-win_amd64.whl", hash = "sha256:4b198ba9fd7004a0cfeeb6540b85bbaa140a1736db2466ca1f8d8ae863e267e3"},
+    {file = "Klampt-0.9.0-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:945066d1651c3ab8984fba45d36d9aa0f4c552140242f5754078eccdcaa3e666"},
+    {file = "Klampt-0.9.0-cp37-cp37m-manylinux2010_x86_64.whl", hash = "sha256:9197998b65b10c755e54ba354dc5cbd122d3e3ad8fdcf08dafb52d7e849d015c"},
+    {file = "Klampt-0.9.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:88c33fb6a4779ef9b92090f7d3aa603244d5095fa9e618ac3b460017c61d985c"},
+    {file = "Klampt-0.9.0-cp37-cp37m-win32.whl", hash = "sha256:5ff7da1744cbffc99d6b2fd1be11b38f64e55b01d34821441c6809ae1939e5f0"},
+    {file = "Klampt-0.9.0-cp37-cp37m-win_amd64.whl", hash = "sha256:1112be6f478824398f0a253c43082bb648d6feb7fcc657ee9ac0e76a05cab2f4"},
+    {file = "Klampt-0.9.0-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:d99f42d1662587c5c76b749dc9fad4fca621aa02b7d5fc38082ad8e04a78b3ad"},
+    {file = "Klampt-0.9.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:af778ac72be59980c808d10a4ed79b926ef998e54fe2a351a0f8dc34e2c213be"},
+    {file = "Klampt-0.9.0-cp38-cp38-manylinux2010_x86_64.whl", hash = "sha256:e2354bfab1bac38443b6c237ac6f70d78890424786a35be66b97a4f16c71c4f5"},
+    {file = "Klampt-0.9.0-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:cfaf1d48e5c7dc86955a83ef14e66bdcd159b9201415e4aa9f82c57b97d80f38"},
+    {file = "Klampt-0.9.0-cp38-cp38-win32.whl", hash = "sha256:4c58f9c9a920b56b8ebb9e55a858ce2bf9713a8c639f21545ac059b56d869517"},
+    {file = "Klampt-0.9.0-cp38-cp38-win_amd64.whl", hash = "sha256:53cf0a44689cc2f83681c98ba82c9dac4f4d919ec978dc2072db1f8f5bef6978"},
+    {file = "Klampt-0.9.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:d259360e9f2b3cfda05b863e61ad832412f666e0e5451fcf154493a38e09748e"},
+    {file = "Klampt-0.9.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:eb6157ed33e4b3dcf6bb876ed4197ba596a420d4a7a131b8419b2e4baa847188"},
+    {file = "Klampt-0.9.0-cp39-cp39-manylinux2010_x86_64.whl", hash = "sha256:2fa62697326dbae68172f6eb19380b05574d9fc196625f25a7417ce9d31b70bc"},
+    {file = "Klampt-0.9.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:88f2f81cd2a8743f0f56503d503e5a721d6b1049094c8cf1ebc88c97bc4b69bc"},
+    {file = "Klampt-0.9.0-cp39-cp39-win32.whl", hash = "sha256:465b04028c906bfd7a1f6933a87126520464fb401d07530f0c2f4d938e0b65f4"},
+    {file = "Klampt-0.9.0-cp39-cp39-win_amd64.whl", hash = "sha256:51e37ce1c6737165177c4fc8e3f535fa9d86ece5ba55dbd0942db7e79120d4b9"},
+    {file = "Klampt-0.9.0-pp37-pypy37_pp73-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:ea98db6e58643b55eb0a2a2ba7fe594a0601bb276a12af71451e18729271e3cd"},
+    {file = "Klampt-0.9.0-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ff2341e07f1b43f84c5faaad058c30324bf268ca053b2dc1649783ca8baea381"},
+    {file = "Klampt-0.9.0-pp38-pypy38_pp73-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:a9d6dc422bee427ac6fdf916ee721424d349c1c7ce590189c3e73d48b7199603"},
+    {file = "Klampt-0.9.0-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d39f41fa7dfab9018c1252bea28bbc9de3dfe82aa8de43a5bcfbfded63bbe28a"},
+]
+
+[package.dependencies]
+numpy = "*"
+PyOpenGL = "*"
+
+[[package]]
 name = "matplotlib"
 version = "3.7.4"
 description = "Python plotting package"
@@ -865,6 +917,17 @@ toml = ["tomli (>=2.0.1)"]
 yaml = ["pyyaml (>=6.0.1)"]
 
 [[package]]
+name = "pyopengl"
+version = "3.1.7"
+description = "Standard OpenGL bindings for Python"
+optional = false
+python-versions = "*"
+files = [
+    {file = "PyOpenGL-3.1.7-py3-none-any.whl", hash = "sha256:a6ab19cf290df6101aaf7470843a9c46207789855746399d0af92521a0a92b7a"},
+    {file = "PyOpenGL-3.1.7.tar.gz", hash = "sha256:eef31a3888e6984fd4d8e6c9961b184c9813ca82604d37fe3da80eb000a76c86"},
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.1.2"
 description = "pyparsing module - Classes and methods to define and execute parsing grammars"
@@ -877,6 +940,53 @@ files = [
 
 [package.extras]
 diagrams = ["jinja2", "railroad-diagrams"]
+
+[[package]]
+name = "pyqt5"
+version = "5.15.2"
+description = "Python bindings for the Qt cross platform application toolkit"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "PyQt5-5.15.2-5.15.2-cp35.cp36.cp37.cp38.cp39-abi3-macosx_10_13_intel.whl", hash = "sha256:894ca4ae767a8d6cf5903784b71f755073c78cb8c167eecf6e4ed6b3b055ac6a"},
+    {file = "PyQt5-5.15.2-5.15.2-cp35.cp36.cp37.cp38.cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:29889845688a54d62820585ad5b2e0200a36b304ff3d7a555e95599f110ba4ce"},
+    {file = "PyQt5-5.15.2-5.15.2-cp35.cp36.cp37.cp38.cp39-none-win32.whl", hash = "sha256:ea24f24b7679bf393dd2e4f53fe0ce65021be18304c1ff7a226c2fc5c356d0da"},
+    {file = "PyQt5-5.15.2-5.15.2-cp35.cp36.cp37.cp38.cp39-none-win_amd64.whl", hash = "sha256:faaecb76ec65e12673a968e7f5bc02495957e6996f0a3fa0d98895f9e4113746"},
+    {file = "PyQt5-5.15.2.tar.gz", hash = "sha256:372b08dc9321d1201e4690182697c5e7ffb2e0770e6b4a45519025134b12e4fc"},
+]
+
+[package.dependencies]
+PyQt5-sip = ">=12.8,<13"
+
+[[package]]
+name = "pyqt5-sip"
+version = "12.13.0"
+description = "The sip module support for PyQt5"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "PyQt5_sip-12.13.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:a7e3623b2c743753625c4650ec7696362a37fb36433b61824cf257f6d3d43cca"},
+    {file = "PyQt5_sip-12.13.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:6e4ac714252370ca037c7d609da92388057165edd4f94e63354f6d65c3ed9d53"},
+    {file = "PyQt5_sip-12.13.0-cp310-cp310-win32.whl", hash = "sha256:d5032da3fff62da055104926ffe76fd6044c1221f8ad35bb60804bcb422fe866"},
+    {file = "PyQt5_sip-12.13.0-cp310-cp310-win_amd64.whl", hash = "sha256:9a8cdd6cb66adcbe5c941723ed1544eba05cf19b6c961851b58ccdae1c894afb"},
+    {file = "PyQt5_sip-12.13.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:0f85fb633a522f04e48008de49dce1ff1d947011b48885b8428838973fbca412"},
+    {file = "PyQt5_sip-12.13.0-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:ec60162e034c42fb99859206d62b83b74f987d58937b3a82bdc07b5c3d190dec"},
+    {file = "PyQt5_sip-12.13.0-cp311-cp311-win32.whl", hash = "sha256:205cd449d08a2b024a468fb6100cd7ed03e946b4f49706f508944006f955ae1a"},
+    {file = "PyQt5_sip-12.13.0-cp311-cp311-win_amd64.whl", hash = "sha256:1c8371682f77852256f1f2d38c41e2e684029f43330f0635870895ab01c02f6c"},
+    {file = "PyQt5_sip-12.13.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:7fe3375b508c5bc657d73b9896bba8a768791f1f426c68053311b046bcebdddf"},
+    {file = "PyQt5_sip-12.13.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:773731b1b5ab1a7cf5621249f2379c95e3d2905e9bd96ff3611b119586daa876"},
+    {file = "PyQt5_sip-12.13.0-cp312-cp312-win32.whl", hash = "sha256:fb4a5271fa3f6bc2feb303269a837a95a6d8dd16be553aa40e530de7fb81bfdf"},
+    {file = "PyQt5_sip-12.13.0-cp312-cp312-win_amd64.whl", hash = "sha256:3a4498f3b1b15f43f5d12963accdce0fd652b0bcaae6baf8008663365827444c"},
+    {file = "PyQt5_sip-12.13.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:9b984c2620a7a7eaf049221b09ae50a345317add2624c706c7d2e9e6632a9587"},
+    {file = "PyQt5_sip-12.13.0-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:3188a06956aef86f604fb0d14421a110fad70d2a9e943dbacbfc3303f651dade"},
+    {file = "PyQt5_sip-12.13.0-cp38-cp38-win32.whl", hash = "sha256:108a15f603e1886988c4b0d9d41cb74c9f9815bf05cefc843d559e8c298a10ce"},
+    {file = "PyQt5_sip-12.13.0-cp38-cp38-win_amd64.whl", hash = "sha256:db228cd737f5cbfc66a3c3e50042140cb80b30b52edc5756dbbaa2346ec73137"},
+    {file = "PyQt5_sip-12.13.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:5338773bbaedaa4f16a73c142fb23cc18c327be6c338813af70260b756c7bc92"},
+    {file = "PyQt5_sip-12.13.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:29fa9cc964517c9fc3f94f072b9a2aeef4e7a2eda1879cb835d9e06971161cdf"},
+    {file = "PyQt5_sip-12.13.0-cp39-cp39-win32.whl", hash = "sha256:96414c93f3d33963887cf562d50d88b955121fbfd73f937c8eca46643e77bf61"},
+    {file = "PyQt5_sip-12.13.0-cp39-cp39-win_amd64.whl", hash = "sha256:bbc7cd498bf19e0862097be1ad2243e824dea56726f00c11cff1b547c2d31d01"},
+    {file = "PyQt5_sip-12.13.0.tar.gz", hash = "sha256:7f321daf84b9c9dbca61b80e1ef37bdaffc0e93312edae2cd7da25b953971d91"},
+]
 
 [[package]]
 name = "pytest"
@@ -1084,4 +1194,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.8"
-content-hash = "52df8926660f3f6e3449db8a3be0c9b14f1bca81fb7c7b49e2cab6cca13bc635"
+content-hash = "332bf0b0fe22820d9b47215a96ac8296c7237885f02c0ca1a0a974c737087087"

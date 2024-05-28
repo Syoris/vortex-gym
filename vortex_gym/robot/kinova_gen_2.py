@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import logging
 from omegaconf import OmegaConf
+from typing import Union
 
 from pyvortex.vortex_env import VortexEnv
 from pyvortex.vortex_classes import AppMode, VortexInterface
@@ -52,6 +53,8 @@ class KinovaGen2(RobotBase):
     def __init__(self, vx_env: VortexEnv):
         init_start_time = time.time()
 
+        self.vx_env = vx_env
+
         """Load config"""
         self._get_robot_config()
 
@@ -59,12 +62,15 @@ class KinovaGen2(RobotBase):
         self.sim_time = 0.0
         self.step_count = 0  # Step counter
 
-        self._joints = KinovaGen2Joints()
+        self._joints = KinovaGen2Joints(vx_env)
         self._init_joints()
 
         self._init_obs_space()
 
         self._init_action_space()
+
+        # Controller
+        self.controller = PIDController(kp=0.6, ki=0.2, kd=0.1, dt=self.vx_env.h, n_joints=3)
 
         """ Robot Parameters """
         # Link lengths
@@ -73,9 +79,6 @@ class KinovaGen2(RobotBase):
         self.L56 = self.robot_cfg.links_length.L56  # from joint 4 to joint 6, [m], 0.3111
         self.L78 = self.robot_cfg.links_length.L78  # from joint 6 to edge of EE where peg is attached, [m], 0.2188
         self.Ltip = self.robot_cfg.links_length.Ltip  # from edge of End-Effector to tip of peg, [m], 0.16
-
-        # Create a display window
-        self.vx_env = vx_env
 
         # # Set parameters values. Done after going home so its not limited by joint torques
         # self.vx_env.set_app_mode(AppMode.EDITING)
@@ -230,47 +233,74 @@ class KinovaGen2(RobotBase):
         for i in range(self.pause_steps):
             self.update_sim()
 
+    def go_to_angles(self, target_angles: Union[list, dict]):
+        """
+        Moves the robot arm to the specified target angles.
+
+        Args:
+            target_angles (Union[list, dict]): The target angles to move the robot arm to.
+
+        Returns:
+            None
+        """
+        if isinstance(target_angles, dict):
+            target_angles = [target_angles['j2'], target_angles['j4'], target_angles['j6']]
+        elif not isinstance(target_angles, list):
+            raise TypeError('target_angles must be a list or dict')
+
+        if len(target_angles) != 3:
+            raise ValueError('target_angles must have 3 elements')
+
+        self.vx_env.set_app_mode(AppMode.SIMULATING)
+        self.vx_env.app.pause(False)
+
+        current_state = self.joints
+        start_time = self.vx_env.sim_time
+        print(f'Start time: {start_time}')
+        print(f'Start state: \n{current_state}')
+
+        goal_reached = False
+        while not goal_reached:
+            current_state = self.joints
+            current_angles = [current_state.j2.angle, current_state.j4.angle, current_state.j6.angle]
+
+            vels = self.controller.compute_velocities(current_angles, target_angles)
+
+            self.set_joints_vels(vels)
+
+            self.vx_env.step()
+
+            if np.allclose(current_angles, target_angles, atol=0.1):
+                goal_reached = True
+
+        print(f'Operation time: {self.vx_env.sim_time - start_time}')
+        print(f'End state: \n{current_state}')
+
     """ Vortex interface functions """
 
-    # self.joints getter
     @property
     def joints(self):
-        self._update_joints_states()
-
-        return self._joints
-
-    def _update_joints_states(self) -> dict:
         """Update robot states (joints angles, velocities, torques) from Vortex"""
 
         for joint in self._joints.__dict__.values():
-            joint.update_state(self.vx_env)
+            joint.update_state()
 
-    # def _update_joints_angles(self):
-    #     """Read joints angles. Update the joint angles in the KinovaGen2Joints object."""
-    #     self.joints.j2.angle = self.vx_env.get_output(VX_OUT.j2_pos_real)
-    #     self.joints.j4.angle = self.vx_env.get_output(VX_OUT.j4_pos_real)
-    #     self.joints.j6.angle = self.vx_env.get_output(VX_OUT.j6_pos_real)
+        return self._joints
 
-    # def _readJvel(self):
-    #     j2_vel = self.vx_env.get_output(VX_OUT.j2_vel_real)
-    #     j4_vel = self.vx_env.get_output(VX_OUT.j4_vel_real)
-    #     j6_vel = self.vx_env.get_output(VX_OUT.j6_vel_real)
+    def set_joints_vels(self, target_vels: Union[list, dict]):
+        """Set joint velocities"""
+        if isinstance(target_vels, list):
+            self.joints.j2.vel_cmd = target_vels[0]
+            self.joints.j4.vel_cmd = target_vels[1]
+            self.joints.j6.vel_cmd = target_vels[2]
 
-    #     return np.array([j2_vel, j4_vel, j6_vel], dtype=np.float32)
+        elif isinstance(target_vels, dict):
+            self.joints.j2.vel_cmd = target_vels['j2']
+            self.joints.j4.vel_cmd = target_vels['j4']
+            self.joints.j6.vel_cmd = target_vels['j6']
 
-    # def _readJtorque(self):
-    #     j2_t = self.vx_env.get_output(VX_OUT.j2_torque)
-    #     j4_t = self.vx_env.get_output(VX_OUT.j4_torque)
-    #     j6_t = self.vx_env.get_output(VX_OUT.j6_torque)
-
-    #     return np.array([j2_t, j4_t, j6_t], dtype=np.float32)
-
-    def _readJvel_target(self):
-        j2_target = self.vx_env.get_input(VX_IN.j2_vel_id)
-        j4_target = self.vx_env.get_input(VX_IN.j4_vel_id)
-        j6_target = self.vx_env.get_input(VX_IN.j6_vel_id)
-
-        return np.array([j2_target, j4_target, j6_target])
+        else:
+            raise TypeError('target_vels must be a list or dict')
 
     def _get_plug_force(self) -> np.array:
         """Read plug force
@@ -295,7 +325,7 @@ class KinovaGen2(RobotBase):
         self.vx_env.set_input(VX_IN.j4_vel_id, target_vels[1])
         self.vx_env.set_input(VX_IN.j6_vel_id, target_vels[2])
 
-    """ Utilities """
+    """ Control """
 
     def _get_ik_vels(self, down_speed, cur_count, step_types):
         th_current = self._update_joints_angles()
@@ -382,6 +412,7 @@ class Joint:
     def __init__(
         self,
         name,
+        vortex_env: VortexEnv,
         position_min,
         position_max,
         vel_min,
@@ -393,6 +424,8 @@ class Joint:
         vx_torque_name=None,
         vx_vel_cmd_name=None,
     ):
+        self._vortex_env = vortex_env
+
         self.name = name
         self.position_min = position_min  # [degrees]
         self.position_max = position_max  # [degrees]
@@ -405,7 +438,7 @@ class Joint:
         self.angle = 0.0  # [degrees]
         self.vel = 0.0  # [degrees/s]
         self.torque = 0.0  # [N*m]
-        self.vel_cmd = 0.0  # [degrees/s]
+        self._vel_cmd = 0.0  # [degrees/s]
 
         # Vortex names
         self.vx_angle_name = vx_angle_name
@@ -413,33 +446,44 @@ class Joint:
         self.vx_torque_name = vx_torque_name
         self.vx_vel_cmd_name = vx_vel_cmd_name
 
-    def update_state(self, vortex_env: VortexEnv):
+    def update_state(self):
         """Update joint state from Vortex
 
         Args:
             vortex_env (VortexEnv): Vortex environment
         """
         if self.vx_angle_name is not None:
-            self.angle = np.rad2deg(vortex_env.get_output(self.vx_angle_name))
+            self.angle = np.rad2deg(self._vortex_env.get_output(self.vx_angle_name))
 
         if self.vx_vel_name is not None:
-            self.vel = np.rad2deg(vortex_env.get_output(self.vx_vel_name))
+            self.vel = np.rad2deg(self._vortex_env.get_output(self.vx_vel_name))
 
         if self.vx_torque_name is not None:
-            self.torque = vortex_env.get_output(self.vx_torque_name)
+            self.torque = self._vortex_env.get_output(self.vx_torque_name)
 
         if self.vx_vel_cmd_name is not None:
-            self.vel_cmd = np.rad2deg(vortex_env.get_input(self.vx_vel_cmd_name))
+            self._vel_cmd = np.rad2deg(self._vortex_env.get_input(self.vx_vel_cmd_name))
+
+    @property
+    def vel_cmd(self):
+        return self._vel_cmd
+
+    @vel_cmd.setter
+    def vel_cmd(self, value):
+        self._vel_cmd = max(self.vel_min, min(value, self.vel_max))
+
+        self._vortex_env.set_input(self.vx_vel_cmd_name, np.deg2rad(self._vel_cmd))
 
     def __repr__(self):
         return f'{self.name}: angle={self.angle:<10.4f}, vel={self.vel:<10.4f}, torque={self.torque:<10.4f}, vel_cmd={self.vel_cmd:<10.4f}'
 
 
 class KinovaGen2Joints:
-    def __init__(self) -> None:
-        self.j1 = Joint('j1', -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
+    def __init__(self, vortex_env: VortexEnv) -> None:
+        self.j1 = Joint('j1', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
         self.j2 = Joint(
             'j2',
+            vortex_env,
             -180.0,
             180.0,
             -180.0,
@@ -451,9 +495,10 @@ class KinovaGen2Joints:
             vx_torque_name=VX_OUT.j2_torque,
             vx_vel_cmd_name=VX_IN.j2_vel_id,
         )
-        self.j3 = Joint('j3', -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
+        self.j3 = Joint('j3', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
         self.j4 = Joint(
             'j4',
+            vortex_env,
             -180.0,
             180.0,
             -180.0,
@@ -465,9 +510,10 @@ class KinovaGen2Joints:
             vx_torque_name=VX_OUT.j4_torque,
             vx_vel_cmd_name=VX_IN.j4_vel_id,
         )
-        self.j5 = Joint('j5', -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
+        self.j5 = Joint('j5', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
         self.j6 = Joint(
             'j6',
+            vortex_env,
             -180.0,
             180.0,
             -180.0,
@@ -479,7 +525,7 @@ class KinovaGen2Joints:
             vx_torque_name=VX_OUT.j6_torque,
             vx_vel_cmd_name=VX_IN.j6_vel_id,
         )
-        self.j7 = Joint('j7', -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
+        self.j7 = Joint('j7', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
 
     def __repr__(self):
         str_list = []
@@ -487,3 +533,37 @@ class KinovaGen2Joints:
             str_list.append(str(joint))
 
         return '\n'.join(str_list)
+
+
+class PIDController:
+    def __init__(self, kp, ki, kd, dt, n_joints=7):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.dt = dt
+        self.n_joints = n_joints
+        self.integral = np.zeros(self.n_joints)
+        self.prev_error = np.zeros(self.n_joints)
+
+    def compute_velocities(self, current_angles, desired_angles):
+        # Compute the error
+        error = np.array(desired_angles) - np.array(current_angles)
+
+        # Proportional term
+        p = self.kp * error
+
+        # Integral term
+        self.integral += error * self.dt
+        i = self.ki * self.integral
+
+        # Derivative term
+        derivative = (error - self.prev_error) / self.dt
+        d = self.kd * derivative
+
+        # Update previous error
+        self.prev_error = error
+
+        # Compute PID output
+        velocities = p + i + d
+
+        return velocities.tolist()

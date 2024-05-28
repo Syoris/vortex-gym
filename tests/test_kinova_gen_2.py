@@ -1,3 +1,4 @@
+import math
 import pytest
 import yaml
 
@@ -97,12 +98,100 @@ class TestKinovaGen2:
         assert kinova_robot.joints.j4.torque != 0.0
         assert kinova_robot.joints.j6.torque != 0.0
 
-        assert kinova_robot.joints.j2.vel_cmd == 0.0
-        assert kinova_robot.joints.j4.vel_cmd == 0.0
-        assert kinova_robot.joints.j6.vel_cmd == 0.0
+        assert kinova_robot.joints.j2._vel_cmd == 0.0
+        assert kinova_robot.joints.j4._vel_cmd == 0.0
+        assert kinova_robot.joints.j6._vel_cmd == 0.0
 
-    # test set_state
+    def test_set_input_list(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
 
-    # go_to_pose
+        # Set joint velocities
+        joints_vels = [0.1, 0.2, 0.3]
+        kinova_robot.set_joints_vels(joints_vels)
+
+        joints = kinova_robot.joints
+        print(joints)
+
+        assert joints.j2.vel_cmd == 0.1
+        assert joints.j4.vel_cmd == 0.2
+        assert joints.j6.vel_cmd == 0.3
+
+    def test_set_input_dict(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
+
+        # Set joint velocities
+        joints_vels = {'j2': 1.1, 'j4': 1.2, 'j6': 1.3}
+        kinova_robot.set_joints_vels(joints_vels)
+
+        joints = kinova_robot.joints
+        print(joints)
+
+        assert joints.j2.vel_cmd == 1.1
+        assert joints.j4.vel_cmd == 1.2
+        assert joints.j6.vel_cmd == 1.3
+
+    def test_set_input_moves(self, vortex_env):
+        # Goals
+        time = 1  # sec
+        j2_goal = -45  # deg
+        j4_goal = 10  # deg
+        j6_goal = 90  # deg
+
+        j2_speed = j2_goal / time
+        j4_speed = j4_goal / time
+        j6_speed = j6_goal / time
+
+        # Set joint velocities
+        kinova_robot = KinovaGen2(vortex_env)
+        kinova_robot.set_joints_vels([j2_speed, j4_speed, j6_speed])
+
+        # Start state
+        start_state = kinova_robot.joints
+        print('\n\n Start State:')
+        print(start_state)
+        start_time = vortex_env.sim_time
+
+        # Sim for `time`
+        for _ in range(int((time - start_time) / vortex_env.get_simulation_time_step())):
+            sim_time = vortex_env.sim_time
+            vortex_env.step()
+
+        assert math.isclose(sim_time - start_time, time, abs_tol=0.1), f'Assertion failed: {sim_time} != {time}'
+
+        # Check final state
+        final_state = kinova_robot.joints
+        print('\n\n Final State:')
+        print(final_state)
+
+        j2_angle = final_state.j2.angle
+        j4_angle = final_state.j4.angle
+        j6_angle = final_state.j6.angle
+
+        assert math.isclose(j2_angle, j2_goal, abs_tol=2), f'Assertion failed: {j2_angle} != {j2_goal}'
+        assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
+        assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
+
+    def test_go_to_angles(self, vortex_env):
+        # Goals
+        j2_goal = -45  # deg
+        j4_goal = 10  # deg
+        j6_goal = 90  # deg
+
+        kinova_robot = KinovaGen2(vortex_env)
+
+        kinova_robot.go_to_angles([j2_goal, j4_goal, j6_goal])
+
+        # Check final state
+        final_state = kinova_robot.joints
+        print('\n\n Final State:')
+        print(final_state)
+
+        j2_angle = final_state.j2.angle
+        j4_angle = final_state.j4.angle
+        j6_angle = final_state.j6.angle
+
+        assert math.isclose(j2_angle, j2_goal, abs_tol=2), f'Assertion failed: {j2_angle} != {j2_goal}'
+        assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
+        assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
 
     # go_to_angles

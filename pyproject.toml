@@ -19,6 +19,9 @@ pandas = "2.0.3"
 omegaconf = "^2.3.0"
 matplotlib = "3.7.4"
 python-json-logger = "^2.0.7"
+klampt = "0.9"
+pyqt5 = "5.15.2"
+pyopengl = "^3.1.7"
 
 
 [tool.poetry.group.dev.dependencies]
