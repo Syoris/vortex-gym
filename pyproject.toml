@@ -22,10 +22,12 @@ python-json-logger = "^2.0.7"
 klampt = "0.9"
 pyqt5 = "5.15.2"
 pyopengl = "^3.1.7"
+roboticstoolbox-python = "^1.1.1"
 
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.1"
+ipykernel = "^6.29.4"
 
 [build-system]
 requires = ["poetry-core"]
@@ -109,7 +111,7 @@ docstring-code-line-length = "dynamic"
 [tool.pytest]
 [tool.pytest.ini_options]
 addopts = [
-    "-s",
+    # "--show-capture",
     "--import-mode=importlib",
     # "-n 1",
     "-p no:faulthandler",

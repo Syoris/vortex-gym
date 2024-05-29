@@ -1,12 +1,24 @@
 import math
 import pytest
 import yaml
+import numpy as np
+
+from spatialmath import SE3
+
 
 from vortex_gym import ASSETS_DIR, ROBOT_CFG_DIR
 from vortex_gym.robot.kinova_gen_2 import KinovaGen2
 
 from pyvortex.vortex_env import VortexEnv
 from pyvortex.vortex_classes import AppMode, VortexInterface
+
+
+import matplotlib
+import matplotlib.pyplot as plt
+
+matplotlib.use('TkAgg')
+
+RENDER_VX = False
 
 
 class VX_Inputs(VortexInterface):
@@ -32,7 +44,7 @@ class VX_Outputs(VortexInterface):
     plug_torque: str = 'plug_torque'
 
 
-@pytest.fixture()
+@pytest.fixture(scope='function')
 def vortex_env():
     """Create a Vortex environment from the env_files fixture
 
@@ -53,12 +65,15 @@ def vortex_env():
         inputs_interface=inputs_interface,
         outputs_interface=outputs_interface,
         viewpoints=['Global'],
+        render=RENDER_VX,
     )
 
     vortex_env.set_app_mode(AppMode.SIMULATING)
     vortex_env.app.pause(False)
 
     return vortex_env
+
+    # vortex_env = None
 
 
 class TestKinovaGen2:
@@ -132,7 +147,7 @@ class TestKinovaGen2:
 
     def test_set_input_moves(self, vortex_env):
         # Goals
-        time = 1  # sec
+        time = 2  # sec
         j2_goal = -45  # deg
         j4_goal = 10  # deg
         j6_goal = 90  # deg
@@ -194,4 +209,74 @@ class TestKinovaGen2:
         assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
         assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
 
-    # go_to_angles
+    # TODO: Test for all 7 joints
+    @pytest.mark.parametrize(
+        'angles_goal',
+        [
+            [-45, 0, 0],
+            [0, -45, 0],
+            [0, 0, -45],
+            [-45, -45, -45],
+            [45, 45, 45],
+        ],
+    )
+    def test_rbt_fkine(self, vortex_env, angles_goal):
+        kinova_robot = KinovaGen2(vortex_env)
+        kinova_robot.go_to_angles(angles_goal)
+
+        # Get state
+        angles = kinova_robot.joints.angles
+
+        # EE pose from vortex
+        vx_pose, fw_pose = kinova_robot.ee_pose
+        vx_trans = vx_pose.t
+        vx_rot = vx_pose.R
+
+        # EE pose from forward kin
+        angles_rad = [np.deg2rad(x) for x in angles]
+        # kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
+        Te = kinova_robot.robot_model.fkine(angles_rad)
+
+        fkine_trans = Te.t
+        fkine_rot = Te.R
+
+        tol = 0.001  # 1mm
+        assert np.allclose(vx_trans, fkine_trans, atol=tol), f'Assertion failed: {vx_trans} != {fkine_trans}'
+        assert np.allclose(vx_rot, fkine_rot, atol=tol), f'Assertion failed: {vx_rot} != {fkine_rot}'
+
+        # # --- Uncomment to plot frames ---
+        # plt.figure()  # create a new figure
+        # kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
+        # SE3().plot(frame='0', dims=[-3, 3], color='black')
+        # vx_pose.plot(frame='EE', dims=[-1, 1], color='red')
+        # Te.plot(frame='ee', dims=[-1, 1], color='green')
+        # ...
+
+    @pytest.mark.parametrize(
+        'pose_goal',  # ([x, y, z], [roll, pitch, yaw])
+        [
+            ([0.5, 0.0, 0.6], [0, 180, 0]),
+        ],
+    )
+    def test_rbt_ikine_sol(self, vortex_env, pose_goal):
+        kinova_robot = KinovaGen2(vortex_env)
+
+        # IKine solution
+        T = SE3(pose_goal[0]) * SE3.RPY(np.deg2rad(pose_goal[1]), order='xyz')
+
+        sol = kinova_robot.robot_model.ikine_LM(T)
+        print(sol)
+
+        # --- Uncomment to plot frames ---
+        plt.figure()  # create a new figure
+        kinova_robot.robot_model.plot(sol.q, backend='pyplot')
+        SE3().plot(frame='0', dims=[-3, 3], color='black')
+        # vx_pose.plot(frame='EE', dims=[-1, 1], color='red')
+        T.plot(frame='ee', dims=[-1, 1], color='green')
+        ...
+
+        assert sol.success, 'IKine failed'
+
+    # TODO
+    # def test_go_to_pose(self, vortex_env, pose_goal):
+    #     ...

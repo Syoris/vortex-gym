@@ -5,12 +5,16 @@ import logging
 from omegaconf import OmegaConf
 from typing import Union
 
+import roboticstoolbox as rtb
+from roboticstoolbox.robot.DHLink import RevoluteDH
+from spatialmath import SE3
+
 from pyvortex.vortex_env import VortexEnv
 from pyvortex.vortex_classes import AppMode, VortexInterface
 # from peg_in_hole.settings import app_settings
 
 from vortex_gym.robot.robot_base import RobotBase
-from vortex_gym import ROBOT_CFG_DIR
+from vortex_gym import ROBOT_CFG_DIR, ASSETS_DIR
 
 logger = logging.getLogger(__name__)
 # robot_logger = logging.getLogger('robot_state')
@@ -35,7 +39,7 @@ class VX_Outputs(VortexInterface):
     j2_torque: str = 'j2_torque'
     j4_torque: str = 'j4_torque'
     j6_torque: str = 'j6_torque'
-    hand_pos_rot: str = 'hand_pos_rot'
+    ee_pose: str = 'ee_pose'
     socket_force: str = 'socket_force'
     socket_torque: str = 'socket_torque'
     plug_force: str = 'plug_force'
@@ -79,6 +83,32 @@ class KinovaGen2(RobotBase):
         self.L56 = self.robot_cfg.links_length.L56  # from joint 4 to joint 6, [m], 0.3111
         self.L78 = self.robot_cfg.links_length.L78  # from joint 6 to edge of EE where peg is attached, [m], 0.2188
         self.Ltip = self.robot_cfg.links_length.Ltip  # from edge of End-Effector to tip of peg, [m], 0.16
+
+        """ Robot Model """
+        d1 = 0.2755
+        d2 = 0.2050
+        d3 = 0.2050
+        d4 = 0.2073
+        d5 = 0.1038
+        d6 = 0.1038
+        d7 = 0.1150  # 0.1600
+        e2 = 0.0098
+
+        # self.robot_model = rtb.Robot.URDF(ASSETS_DIR / 'Kinova Gen2 Unjamming' / 'j2s7s300_ee.urdf')
+        self.robot_model = rtb.DHRobot(
+            [
+                RevoluteDH(alpha=np.pi / 2, d=d1),  # 1
+                RevoluteDH(alpha=np.pi / 2),  # 2
+                RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
+                RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
+                RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
+                RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
+                RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
+            ],
+            name='KinovaGen2',
+        )
+
+        print(self.robot_model)
 
         # # Set parameters values. Done after going home so its not limited by joint torques
         # self.vx_env.set_app_mode(AppMode.EDITING)
@@ -325,6 +355,15 @@ class KinovaGen2(RobotBase):
         self.vx_env.set_input(VX_IN.j4_vel_id, target_vels[1])
         self.vx_env.set_input(VX_IN.j6_vel_id, target_vels[2])
 
+    @property
+    def ee_pose(self):
+        """Read end-effector pose"""
+
+        fw_pose = self._read_tips_pos_fk(np.deg2rad([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle]))
+        vx_pose = SE3(np.array(self.vx_env.get_output(VX_OUT.ee_pose)))
+
+        return vx_pose, fw_pose
+
     """ Control """
 
     def _get_ik_vels(self, down_speed, cur_count, step_types):
@@ -356,17 +395,12 @@ class KinovaGen2(RobotBase):
         q6 = th_current[2]
 
         current_tips_posx = (
-            self.L34 * np.sin(-q2)
-            + self.L56 * np.sin(-q2 + q4)
-            + self.L78 * np.sin(-q2 + q4 - q6)
-            + self.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
+            self.L34 * np.sin(-q2) + self.L56 * np.sin(-q2 + q4) + self.L78 * np.sin(-q2 + q4 - q6)
+            # + self.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
         )
         current_tips_posz = (
-            self.L12
-            + self.L34 * np.cos(-q2)
-            + self.L56 * np.cos(-q2 + q4)
-            + self.L78 * np.cos(-q2 + q4 - q6)
-            + self.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
+            self.L12 + self.L34 * np.cos(-q2) + self.L56 * np.cos(-q2 + q4) + self.L78 * np.cos(-q2 + q4 - q6)
+            # + self.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
         )
         current_tips_rot = -q2 + q4 - q6 + 90.0 * (np.pi / 180.0)
 
@@ -533,6 +567,14 @@ class KinovaGen2Joints:
             str_list.append(str(joint))
 
         return '\n'.join(str_list)
+
+    @property
+    def angles(self):
+        angles = []
+        for joint in self.__dict__.values():
+            angles.append(joint.angle)
+
+        return angles
 
 
 class PIDController:
