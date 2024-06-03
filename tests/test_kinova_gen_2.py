@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.use('TkAgg')
 
-RENDER_VX = False
+RENDER_VX = True
 
 
 class VX_Inputs(VortexInterface):
@@ -228,7 +228,7 @@ class TestKinovaGen2:
         angles = kinova_robot.joints.angles
 
         # EE pose from vortex
-        vx_pose, fw_pose = kinova_robot.ee_pose
+        vx_pose = kinova_robot.ee_pose
         vx_trans = vx_pose.t
         vx_rot = vx_pose.R
 
@@ -255,27 +255,42 @@ class TestKinovaGen2:
     @pytest.mark.parametrize(
         'pose_goal',  # ([x, y, z], [roll, pitch, yaw])
         [
-            ([0.5, 0.0, 0.6], [0, 180, 0]),
+            (
+                [0.66475637, -0.0098, 0.93941385],
+                [-180, -45, -180],
+            ),  # [-3.14159265, -0.78603249, -3.14159265]
         ],
     )
     def test_rbt_ikine_sol(self, vortex_env, pose_goal):
         kinova_robot = KinovaGen2(vortex_env)
+        rbt_model = kinova_robot.robot_model
+
+        # TODO: Choose between angles or Tep as arguments to test
+        Tep = rbt_model.fkine(np.deg2rad([0, -45, 0, 0, 0, 0, 0]))
+        # Tep = SE3(pose_goal[0]) * SE3.RPY(np.deg2rad(pose_goal[1]), order='xyz')
 
         # IKine solution
-        T = SE3(pose_goal[0]) * SE3.RPY(np.deg2rad(pose_goal[1]), order='xyz')
+        sol = rbt_model.ikine_LM(
+            Tep, q0=[0, 0, 0, 0, 0, 0, 0], joint_limits=False, ilimit=1000, slimit=5000, mask=[1, 1, 1, 0, 0, 0]
+        )
+        print(f'Success: {sol.success}')
+        print(sol.q)
 
-        sol = kinova_robot.robot_model.ikine_LM(T)
-        print(sol)
+        # Move robot to solution
+        kinova_robot.go_to_angles([sol.q[1], sol.q[3], sol.q[5]], degrees=False)
+        sim_pose = kinova_robot.ee_pose
 
-        # --- Uncomment to plot frames ---
-        plt.figure()  # create a new figure
-        kinova_robot.robot_model.plot(sol.q, backend='pyplot')
-        SE3().plot(frame='0', dims=[-3, 3], color='black')
-        # vx_pose.plot(frame='EE', dims=[-1, 1], color='red')
-        T.plot(frame='ee', dims=[-1, 1], color='green')
-        ...
+        # # --- Uncomment to plot frames ---
+        # rbt_model.plot(sol.q, backend='pyplot')
+        # SE3().plot(frame='0', dims=[-3, 3], color='black')
+        # sim_pose.plot(frame='sim', dims=[-1, 1], color='red')
+        # Tep.plot(frame='Tep', dims=[-1, 1], color='green')
 
+        # Assert
+        tol = 0.001  # 1mm
         assert sol.success, 'IKine failed'
+        assert np.allclose(sim_pose.t, Tep.t, atol=tol), f'Assertion failed: {sim_pose.t} != {Tep.t}'
+        # assert np.allclose(sim_pose.R, Tep.R, atol=tol), f'Assertion failed: {sim_pose.R} != {Tep.R}'
 
     # TODO
     # def test_go_to_pose(self, vortex_env, pose_goal):

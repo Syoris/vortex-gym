@@ -97,7 +97,7 @@ class KinovaGen2(RobotBase):
         # self.robot_model = rtb.Robot.URDF(ASSETS_DIR / 'Kinova Gen2 Unjamming' / 'j2s7s300_ee.urdf')
         self.robot_model = rtb.DHRobot(
             [
-                RevoluteDH(alpha=np.pi / 2, d=d1),  # 1
+                RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
                 RevoluteDH(alpha=np.pi / 2),  # 2
                 RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
                 RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
@@ -263,7 +263,7 @@ class KinovaGen2(RobotBase):
         for i in range(self.pause_steps):
             self.update_sim()
 
-    def go_to_angles(self, target_angles: Union[list, dict]):
+    def go_to_angles(self, target_angles: Union[list, dict], degrees=True):
         """
         Moves the robot arm to the specified target angles.
 
@@ -280,6 +280,9 @@ class KinovaGen2(RobotBase):
 
         if len(target_angles) != 3:
             raise ValueError('target_angles must have 3 elements')
+
+        if not degrees:
+            target_angles = np.rad2deg(target_angles)
 
         self.vx_env.set_app_mode(AppMode.SIMULATING)
         self.vx_env.app.pause(False)
@@ -359,10 +362,10 @@ class KinovaGen2(RobotBase):
     def ee_pose(self):
         """Read end-effector pose"""
 
-        fw_pose = self._read_tips_pos_fk(np.deg2rad([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle]))
+        # fw_pose = self._read_tips_pos_fk(np.deg2rad([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle]))
         vx_pose = SE3(np.array(self.vx_env.get_output(VX_OUT.ee_pose)))
 
-        return vx_pose, fw_pose
+        return vx_pose
 
     """ Control """
 
