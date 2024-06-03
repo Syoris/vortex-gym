@@ -12,8 +12,9 @@ from pyvortex.vortex_classes import AppMode
 
 
 import matplotlib
+
 # import matplotlib.pyplot as plt
-# from spatialmath import SE3
+from spatialmath import SE3
 
 matplotlib.use('TkAgg')
 
@@ -296,4 +297,14 @@ class TestKinovaGen2:
     # def test_go_to_pose(self, vortex_env, pose_goal):
     #     ...
 
-    def test_peg_pose(self, vortex_env): ...
+    def test_peg_pose(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
+
+        peg_pose = kinova_robot.peg_pose
+        # print(peg_pose)
+
+        T_peg_exp = SE3([0.160, -0.007, 1.215]) * SE3.RPY(np.deg2rad([0, 90, 0]), order='xyz')
+
+        tol = 0.001  # 1mm
+        assert np.allclose(peg_pose.t, T_peg_exp.t, atol=tol), f'Assertion failed: {peg_pose.t} != {T_peg_exp.t}'
+        assert np.allclose(peg_pose.R, T_peg_exp.R, atol=tol), f'Assertion failed: {peg_pose.R} != {T_peg_exp.R}'

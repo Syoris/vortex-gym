@@ -285,9 +285,25 @@ class KinovaGen2(RobotBase):
 
         return self._joints
 
+    @property
+    def ee_pose(self):
+        """Read end-effector pose"""
+
+        # fw_pose = self._read_tips_pos_fk(np.deg2rad([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle]))
+        vx_pose = SE3(np.array(self.vx_env.get_output(self.vx_out.ee_pose)))
+
+        return vx_pose
+
+    @property
+    def peg_pose(self):
+        """Read peg pose"""
+        vx_peg_pose = SE3(np.array(self.vx_env.get_output(self.vx_out.peg_tip_pose)))
+
+        return vx_peg_pose
+
     def set_joints_vels(self, target_vels: Union[list, dict]):
         """Set joint velocities"""
-        if isinstance(target_vels, list):
+        if isinstance(target_vels, (list, np.ndarray)):
             self.joints.j2.vel_cmd = target_vels[0]
             self.joints.j4.vel_cmd = target_vels[1]
             self.joints.j6.vel_cmd = target_vels[2]
@@ -298,39 +314,25 @@ class KinovaGen2(RobotBase):
             self.joints.j6.vel_cmd = target_vels['j6']
 
         else:
-            raise TypeError('target_vels must be a list or dict')
+            raise TypeError('target_vels must be a list, numpy array, or dict')
 
-    def _get_plug_force(self) -> np.array:
+    def get_peg_force(self) -> np.array:
         """Read plug force
 
         Returns:
             np.array(1x3): [x, y, z]
         """
-        plug_force = self.vx_env.get_output(self.vx_out.plug_force)
-        return np.array([plug_force.x, plug_force.y, plug_force.z])
+        peg_force = self.vx_env.get_output(self.vx_out.peg_force)
+        return np.array([peg_force.x, peg_force.y, peg_force.z])
 
-    def _get_plug_torque(self) -> np.array:
+    def get_peg_torque(self) -> np.array:
         """Read plug torque
 
         Returns:
             np.array: [x, y, z]
         """
-        plug_torque = self.vx_env.get_output(self.vx_out.plug_torque)
-        return np.array([plug_torque.x, plug_torque.y, plug_torque.z])
-
-    def _send_joint_target_vel(self, target_vels):
-        self.vx_env.set_input(self.vx_in.j2_vel_id, target_vels[0])
-        self.vx_env.set_input(self.vx_in.j4_vel_id, target_vels[1])
-        self.vx_env.set_input(self.vx_in.j6_vel_id, target_vels[2])
-
-    @property
-    def ee_pose(self):
-        """Read end-effector pose"""
-
-        # fw_pose = self._read_tips_pos_fk(np.deg2rad([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle]))
-        vx_pose = SE3(np.array(self.vx_env.get_output(self.vx_out.ee_pose)))
-
-        return vx_pose
+        peg_torque = self.vx_env.get_output(self.vx_out.peg_torque)
+        return np.array([peg_torque.x, peg_torque.y, peg_torque.z])
 
     """ Control """
 
