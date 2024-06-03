@@ -280,7 +280,7 @@ class KinovaGen2(RobotBase):
     def joints(self):
         """Update robot states (joints angles, velocities, torques) from Vortex"""
 
-        for joint in self._joints.joints:
+        for joint in self._joints.joints_list:
             joint.update_state()
 
         return self._joints
@@ -534,7 +534,7 @@ class KinovaGen2Joints:
 
     def __repr__(self):
         str_list = []
-        for joint in self.joints:
+        for joint in self.joints_list:
             str_list.append(str(joint))
 
         return '\n'.join(str_list)
@@ -542,7 +542,7 @@ class KinovaGen2Joints:
     @property
     def angles(self):
         angles = []
-        for joint in self.joints:
+        for joint in self.joints_list:
             angles.append(joint.angle)
 
         return angles
@@ -550,7 +550,7 @@ class KinovaGen2Joints:
     @property
     def vels(self):
         vels = []
-        for joint in self.joints:
+        for joint in self.joints_list:
             vels.append(joint.vel)
 
         return vels
@@ -558,21 +558,21 @@ class KinovaGen2Joints:
     @property
     def torques(self):
         torques = []
-        for joint in self.joints:
+        for joint in self.joints_list:
             torques.append(joint.torque)
 
         return torques
 
     @property
-    def vel_cmds(self):
+    def vels_cmds(self):
         vel_cmds = []
-        for joint in self.joints:
+        for joint in self.joints_list:
             vel_cmds.append(joint.vel_cmd)
 
         return vel_cmds
 
     @property
-    def joints(self):
+    def joints_list(self):
         return [self.j1, self.j2, self.j3, self.j4, self.j5, self.j6, self.j7]
 
 

@@ -5,7 +5,7 @@ import numpy as np
 
 
 from vortex_gym import ASSETS_DIR, ROBOT_CFG_DIR
-from vortex_gym.robot.kinova_gen_2 import KinovaGen2
+from vortex_gym.robot.kinova_gen_2 import KinovaGen2, Joint, KinovaGen2Joints
 
 from pyvortex.vortex_env import VortexEnv
 from pyvortex.vortex_classes import AppMode
@@ -158,6 +158,34 @@ class TestKinovaGen2:
         assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
         assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
 
+    def test_KinovaGen2Joints(self, vortex_env):
+        """Test KinovaGen2Joints class. Check if attributes returned are correct"""
+        kinova_robot = KinovaGen2(vortex_env)
+
+        angles = kinova_robot.joints.angles
+        vels = kinova_robot.joints.vels
+        torques = kinova_robot.joints.torques
+        vel_cmds = kinova_robot.joints.vels_cmds
+        joints_list = kinova_robot.joints.joints_list
+
+        assert isinstance(kinova_robot.joints, KinovaGen2Joints)
+
+        assert isinstance(angles, list)
+        assert len(angles) == 7
+
+        assert isinstance(vels, list)
+        assert len(vels) == 7
+
+        assert isinstance(torques, list)
+        assert len(torques) == 7
+
+        assert isinstance(vel_cmds, list)
+        assert len(vel_cmds) == 7
+
+        assert isinstance(joints_list, list)
+        assert isinstance(joints_list[0], Joint)
+        assert len(joints_list) == 7
+
     def test_go_to_angles(self, vortex_env):
         # Goals
         j2_goal = -45  # deg
@@ -268,4 +296,4 @@ class TestKinovaGen2:
     # def test_go_to_pose(self, vortex_env, pose_goal):
     #     ...
 
-    def test_tool_pose(self, vortex_env): ...
+    def test_peg_pose(self, vortex_env): ...
