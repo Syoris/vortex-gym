@@ -3,7 +3,7 @@ robot_name: kinova_gen2
 actuators:
   j2: # KA-75+
     name: joint_2
-    position_max: -40.0  # deg  should be 47 to 313
+    position_max: -47.0  # deg  should be 47 to 313
     position_min: -313.0  # deg
     vel_min: -36.0  # deg/s
     vel_max: 36.0  # deg/s

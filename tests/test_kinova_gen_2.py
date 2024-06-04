@@ -140,7 +140,7 @@ class TestKinovaGen2:
         start_time = vortex_env.sim_time
 
         # Sim for `time`
-        for _ in range(int((time - start_time) / vortex_env.get_simulation_time_step())):
+        for _ in range(int(time / vortex_env.get_simulation_time_step())):
             sim_time = vortex_env.sim_time
             vortex_env.step()
 
@@ -190,7 +190,7 @@ class TestKinovaGen2:
     def test_go_to_angles(self, vortex_env):
         # Goals
         j2_goal = -45  # deg
-        j4_goal = 10  # deg
+        j4_goal = 100  # deg
         j6_goal = 90  # deg
 
         kinova_robot = KinovaGen2(vortex_env)

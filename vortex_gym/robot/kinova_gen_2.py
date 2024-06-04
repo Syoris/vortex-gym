@@ -14,7 +14,7 @@ from pyvortex.vortex_classes import AppMode, VortexInterface
 # from peg_in_hole.settings import app_settings
 
 from vortex_gym.robot.robot_base import RobotBase
-from vortex_gym import ROBOT_CFG_DIR, ASSETS_DIR
+from vortex_gym import ROBOT_CFG_DIR
 
 logger = logging.getLogger(__name__)
 # robot_logger = logging.getLogger('robot_state')
@@ -55,7 +55,7 @@ KI = 0
 
 
 class KinovaGen2(RobotBase):
-    def __init__(self, vx_env: VortexEnv):
+    def __init__(self, vx_env: VortexEnv, set_joints_limits: bool = False, set_forces_limits: bool = True):
         init_start_time = time.time()
 
         self.vx_env = vx_env
@@ -113,12 +113,23 @@ class KinovaGen2(RobotBase):
             name='KinovaGen2',
         )
 
-        print(self.robot_model)
+        # print(self.robot_model)
 
-        # # Set parameters values. Done after going home so its not limited by joint torques
-        # self.vx_env.set_app_mode(AppMode.EDITING)
-        # for field, field_value in {**self.joints_range, **self.forces_range}.items():
-        #     self.vx_env.set_parameter(field, field_value)
+        # Set parameters values. Done after going home so its not limited by joint torques
+        self.vx_env.set_app_mode(AppMode.EDITING)
+
+        # Joints limits
+        if set_joints_limits:
+            for field, field_value in {**self.joints_range}.items():
+                self.vx_env.set_parameter(field, field_value)
+
+        # Forces limits
+        if set_forces_limits:
+            for field, field_value in {**self.forces_range}.items():
+                self.vx_env.set_parameter(field, field_value)
+
+        self.vx_env.set_app_mode(AppMode.SIMULATING)
+        self.vx_env.app.pause(False)
 
         print(f'KinovaGen2 initialized. Time: {time.time() - init_start_time} sec')
 
@@ -302,7 +313,14 @@ class KinovaGen2(RobotBase):
         return vx_peg_pose
 
     def set_joints_vels(self, target_vels: Union[list, dict]):
-        """Set joint velocities"""
+        """Set joint velocities
+
+        Args:
+            target_vels (Union[list, dict]): Target joint velocities in [degrees/s]
+
+        Raises:
+            TypeError: Invalid target_vels type
+        """
         if isinstance(target_vels, (list, np.ndarray)):
             self.joints.j2.vel_cmd = target_vels[0]
             self.joints.j4.vel_cmd = target_vels[1]
@@ -336,29 +354,6 @@ class KinovaGen2(RobotBase):
 
     """ Control """
 
-    def _get_ik_vels(self, down_speed, cur_count, step_types):
-        th_current = self._update_joints_angles()
-        current_pos = self._read_tips_pos_fk(th_current)
-        if step_types == self.pre_insert_steps:
-            x_set = current_pos[0] - self.xpos_hole
-            x_vel = -x_set / (self.h)
-            z_vel = down_speed / (step_types * self.h)
-
-        elif step_types == self.insertion_steps:
-            vel = down_speed / (step_types * self.h)
-            x_vel = vel * np.sin(np.deg2rad(self.insertion_misalign))
-            z_vel = vel * np.cos(np.deg2rad(self.insertion_misalign))
-
-        else:
-            print('STEP TYPES DOES NOT MATCH')
-
-        rot_vel = 0.0
-        next_vel = [x_vel, -z_vel, rot_vel]
-        J = self._build_Jacobian(th_current)
-        Jinv = np.linalg.inv(J)
-        j_vel_next = np.dot(Jinv, next_vel)
-        return j_vel_next
-
     def _read_tips_pos_fk(self, th_current):
         q2 = th_current[0]
         q4 = th_current[1]
@@ -376,41 +371,6 @@ class KinovaGen2(RobotBase):
 
         return current_tips_posx, current_tips_posz, current_tips_rot
 
-    def _build_Jacobian(self, th_current):
-        q2 = th_current[0]
-        q4 = th_current[1]
-        q6 = th_current[2]
-
-        a_x = (
-            -self.L34 * np.cos(-q2)
-            - self.L56 * np.cos(-q2 + q4)
-            - self.L78 * np.cos(-q2 + q4 - q6)
-            - self.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        b_x = (
-            self.L56 * np.cos(-q2 + q4)
-            + self.L78 * np.cos(-q2 + q4 - q6)
-            + self.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        c_x = -self.L78 * np.cos(-q2 + q4 - q6) - self.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-
-        a_z = (
-            self.L34 * np.sin(-q2)
-            + self.L56 * np.sin(-q2 + q4)
-            + self.L78 * np.sin(-q2 + q4 - q6)
-            + self.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        b_z = (
-            -self.L56 * np.sin(-q2 + q4)
-            - self.L78 * np.sin(-q2 + q4 - q6)
-            - self.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        c_z = self.L78 * np.sin(-q2 + q4 - q6) + self.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-
-        J = [[a_x, b_x, c_x], [a_z, b_z, c_z], [-1.0, 1.0, -1.0]]
-
-        return J
-
 
 class Joint:
     def __init__(
@@ -423,6 +383,7 @@ class Joint:
         vel_max,
         torque_min,
         torque_max,
+        angle_offset=0.0,
         vx_angle_name=None,
         vx_vel_name=None,
         vx_torque_name=None,
@@ -437,6 +398,7 @@ class Joint:
         self.vel_max = vel_max  # [degrees/s]
         self.torque_min = torque_min  # [N*m]
         self.torque_max = torque_max  # [N*m]
+        self.angle_offset = angle_offset  # Offset between vortex and real robot [degrees]
 
         # States
         self.angle = 0.0  # [degrees]
@@ -457,7 +419,7 @@ class Joint:
             vortex_env (VortexEnv): Vortex environment
         """
         if self.vx_angle_name is not None:
-            self.angle = np.rad2deg(self._vortex_env.get_output(self.vx_angle_name))
+            self.angle = np.rad2deg(self._vortex_env.get_output(self.vx_angle_name)) + self.angle_offset
 
         if self.vx_vel_name is not None:
             self.vel = np.rad2deg(self._vortex_env.get_output(self.vx_vel_name))
@@ -473,7 +435,14 @@ class Joint:
         return self._vel_cmd
 
     @vel_cmd.setter
-    def vel_cmd(self, value):
+    def vel_cmd(self, value: float):
+        """Set the velocity command.
+
+        Converts the velocity command from [degrees/s] to [radians/s] and sets the velocity command in Vortex.
+
+        Args:
+            value (float): Joint velocity command [degrees/s]
+        """
         self._vel_cmd = max(self.vel_min, min(value, self.vel_max))
 
         self._vortex_env.set_input(self.vx_vel_cmd_name, np.deg2rad(self._vel_cmd))
@@ -501,6 +470,7 @@ class KinovaGen2Joints:
             vx_vel_name=self._vx_out.j2_vel_real,
             vx_torque_name=self._vx_out.j2_torque,
             vx_vel_cmd_name=self._vx_in.j2_vel_id,
+            angle_offset=0.0,
         )
         self.j3 = Joint('j3', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
         self.j4 = Joint(
@@ -516,6 +486,7 @@ class KinovaGen2Joints:
             vx_vel_name=self._vx_out.j4_vel_real,
             vx_torque_name=self._vx_out.j4_torque,
             vx_vel_cmd_name=self._vx_in.j4_vel_id,
+            angle_offset=0.0,
         )
         self.j5 = Joint('j5', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
         self.j6 = Joint(
@@ -531,6 +502,7 @@ class KinovaGen2Joints:
             vx_vel_name=self._vx_out.j6_vel_real,
             vx_torque_name=self._vx_out.j6_torque,
             vx_vel_cmd_name=self._vx_in.j6_vel_id,
+            angle_offset=0.0,
         )
         self.j7 = Joint('j7', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
 

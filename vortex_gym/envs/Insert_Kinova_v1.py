@@ -7,14 +7,30 @@ from vortex_gym.robot.kinova_gen_2 import KinovaGen2, KinovaVxIn, KinovaVxOut
 from vortex_gym import ASSETS_DIR
 
 
-class ReachKinovaV1(gym.Env):
-    metadata = {'render_modes': ['human'], 'render_fps': 60}
+class InsertKinovaV1(gym.Env):
+    metadata = {'render_modes': ['human'], 'render_fps': 100}
 
     # --------------------------------------------------------------------------------------------
     # MARK: Initialization
     # --------------------------------------------------------------------------------------------
-    def __init__(self, render_mode=None, task_cfg: None = None):
-        self.task_cfg = task_cfg
+    def __init__(
+        self,
+        render_mode=None,
+        sim_time_step=0.01,
+        insertion_time=2.5,
+        z_insertion=0.07,
+        misaligment_range=[-2.0, 2.0],
+    ):
+        # Task parameters
+        self.sim_time_step = sim_time_step  # Simulation time step [sec]
+        self.insertion_time = insertion_time  # Time to insert the peg in the hole [sec]
+        self.z_insertion = z_insertion  # Depth of the peg insertion [m]
+        self.z_insertion_speed = self.z_insertion / self.insertion_time  # Speed of the peg insertion [m/s]
+
+        self.misalignment = 0.0  # Misalignment of the peg insertion. Changes the angle of the velocity [deg]
+        self.misalignment_range = np.random.uniform(
+            misaligment_range[0], misaligment_range[1]
+        )  # Range of misalignment [deg]
 
         # Vortex environment
         self._assets_dir = ASSETS_DIR
@@ -24,11 +40,16 @@ class ReachKinovaV1(gym.Env):
         self._kinova_vx_in = KinovaVxIn()
         self._kinova_vx_out = KinovaVxOut()
 
+        assert render_mode is None or render_mode in self.metadata['render_modes']
+        self.render_mode = render_mode
+
         self.vortex_env = VortexEnv(
             assets_dir=ASSETS_DIR,
+            h=self.sim_time_step,
             config_file=self._config_file,
             content_file=self._content_file,
             viewpoints=['Global', 'Perspective'],
+            render=True if render_mode == 'human' else False,
         )
 
         self.robot = KinovaGen2(self.vortex_env)
@@ -54,10 +75,6 @@ class ReachKinovaV1(gym.Env):
         # Initialize robot
         self.robot.go_home()
         self.vortex_env.save_current_frame()
-
-        # Render
-        assert render_mode is None or render_mode in self.metadata['render_modes']
-        self.render_mode = render_mode
 
         self.reset()
 
@@ -92,16 +109,15 @@ class ReachKinovaV1(gym.Env):
         self.vortex_env.reset_saved_frame()
 
         # Get observation and info
-        observation = self._get_obs()
+        self.obs = self._get_obs()
         info = self._get_info()
 
         self.step_count = 0
         self.ep_completed = False
 
-        # if self.render_mode == 'human':
-        #     self._render_frame()
+        self.render()
 
-        return observation, info
+        return self.obs, info
 
     def step(self, action):
         """Take one step. This is the main function of the environment.
@@ -131,8 +147,8 @@ class ReachKinovaV1(gym.Env):
 
         self.action = action
 
-        # self.ik_joints_vels = self._get_ik_vels(self.insertz, self.step_count, step_types=self.insertion_steps)
-        self.ik_joints_vels = [5.0, 5.0, 5.0]
+        self.ik_joints_vels = self._get_ik_vels(self.obs['angles'])
+        # self.ik_joints_vels = [5.0, 5.0, 5.0]
 
         # Scale actions
         act_j2 = self.action_coeff * self.action[0] * self._actuator_high_bound[0]
@@ -165,7 +181,17 @@ class ReachKinovaV1(gym.Env):
 
         return self.obs, reward, self.ep_completed, terminated, self.info
 
-    def render(self, mode='human'): ...
+    def render(self):
+        """Render the environment.
+
+        Gymnasium docs: https://gymnasium.farama.org/api/env/#gymnasium.Env.render
+        """
+        if self.render_mode == 'human':
+            active = True
+        else:
+            active = False
+
+        self.vortex_env.render(active=active)
 
     def close(self): ...
 
@@ -216,3 +242,67 @@ class ReachKinovaV1(gym.Env):
 
     def _compute_reward(self) -> float:
         return 0.0
+
+    def _build_Jacobian(self, th_current: np.ndarray) -> np.ndarray:
+        """Build the manipulator's Jacobian matrix.
+
+        Args:
+            th_current (np.ndarray): Current joint positions [j2, j4, j6] [deg]
+
+        Returns:
+            np.ndarray: Jacobian matrix
+        """
+        q2 = np.deg2rad(th_current[0])
+        q4 = np.deg2rad(th_current[1])
+        q6 = np.deg2rad(th_current[2])
+
+        a_x = (
+            -self.robot.L34 * np.cos(-q2)
+            - self.robot.L56 * np.cos(-q2 + q4)
+            - self.robot.L78 * np.cos(-q2 + q4 - q6)
+            - self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
+        )
+        b_x = (
+            self.robot.L56 * np.cos(-q2 + q4)
+            + self.robot.L78 * np.cos(-q2 + q4 - q6)
+            + self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
+        )
+        c_x = -self.robot.L78 * np.cos(-q2 + q4 - q6) - self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
+
+        a_z = (
+            self.robot.L34 * np.sin(-q2)
+            + self.robot.L56 * np.sin(-q2 + q4)
+            + self.robot.L78 * np.sin(-q2 + q4 - q6)
+            + self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
+        )
+        b_z = (
+            -self.robot.L56 * np.sin(-q2 + q4)
+            - self.robot.L78 * np.sin(-q2 + q4 - q6)
+            - self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
+        )
+        c_z = self.robot.L78 * np.sin(-q2 + q4 - q6) + self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
+
+        J = [[a_x, b_x, c_x], [a_z, b_z, c_z], [-1.0, 1.0, -1.0]]
+
+        return J
+
+    def _get_ik_vels(self, q: np.ndarray):
+        """Compute the joint velocities to go straight down with a misalignment.
+
+        Args:
+            q (np.ndarray): Current joint positions [j2, j4, j6] [deg]
+
+        Returns:
+            np.ndarray: Desired joint velocities [j2, j4, j6] [deg/s]
+        """
+        x_vel = self.z_insertion_speed * np.sin(np.deg2rad(self.misalignment))
+        z_vel = self.z_insertion_speed * np.cos(np.deg2rad(self.misalignment))
+        rot_vel = 0.0
+
+        cartesian_vel = np.array([x_vel, -z_vel, rot_vel])
+        J = self._build_Jacobian(q)
+
+        Jinv = np.linalg.inv(J)
+        q_vel = np.dot(Jinv, cartesian_vel)
+
+        return np.rad2deg(q_vel)

@@ -3,7 +3,9 @@ import numpy as np
 from spatialmath import SE3
 import gymnasium as gym
 
-from vortex_gym.envs.Reach_Kinova_v1 import ReachKinovaV1
+import pygetwindow as gw
+
+from vortex_gym.envs.Insert_Kinova_v1 import InsertKinovaV1
 
 
 RENDER = False
@@ -11,7 +13,7 @@ RENDER = False
 
 @pytest.fixture(scope='class')
 def kinova_env():
-    kinova_env = ReachKinovaV1(render_mode='human' if RENDER else None)
+    kinova_env = InsertKinovaV1(render_mode='human' if RENDER else None)
     return kinova_env
 
 
@@ -26,10 +28,10 @@ def is_robot_home(peg_pose):
 
 class TestKinovaGen2:
     def test_init(self):
-        kinova_env = ReachKinovaV1()
+        kinova_env = InsertKinovaV1()
 
         # Check __init__ ok
-        assert isinstance(kinova_env, ReachKinovaV1)
+        assert isinstance(kinova_env, InsertKinovaV1)
 
         # Check robot is home
         peg_pose = kinova_env.robot.peg_pose
@@ -74,23 +76,71 @@ class TestKinovaGen2:
         peg_pose = kinova_env.robot.peg_pose
         is_robot_home(peg_pose)
 
-    # TODO
-    # def test_render(self, kinova_env):
-    #     kinova_env.reset()
-    #     kinova_env.render()
-
-    def test_env(self):
+    def test_env_render(self):
         """
         Test all the functions of the gym environment. No RL agent is used.
         """
-        env = gym.make('vx_envs/ReachKinova-v1', render_mode='human')
+        env = gym.make('vx_envs/InsertKinova-v1', render_mode='human')
         observation, info = env.reset()
+
+        disp_name_window_name = 'CM Labs Graphics Qt'
+        n_disp = len(gw.getWindowsWithTitle(disp_name_window_name))
+        assert n_disp >= 1
 
         for _ in range(1000):
             action = env.action_space.sample()  # agent policy that uses the observation and info
             observation, reward, terminated, truncated, info = env.step(action)
 
             if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()
+
+    def test_env_no_render(self):
+        """
+        Test all the functions of the gym environment. No RL agent is used.
+        """
+        env = gym.make('vx_envs/InsertKinova-v1', render_mode=None)
+        observation, info = env.reset()
+
+        disp_name_window_name = 'CM Labs Graphics Qt'
+        n_disp = len(gw.getWindowsWithTitle(disp_name_window_name))
+        assert n_disp == 0
+
+        for _ in range(1000):
+            action = env.action_space.sample()  # agent policy that uses the observation and info
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()
+
+    def test_ikine(self):
+        """To test the robot goes straight down without action"""
+
+        env = gym.make('vx_envs/InsertKinova-v1', render_mode='human')
+        observation, info = env.reset()
+
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+
+        for _ in range(1000):
+            action = np.zeros(2)
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                end_peg_pose_t, end_peg_pose_rpy = info['peg_pose']
+
+                assert np.isclose(start_peg_pose_t[0], end_peg_pose_t[0], atol=0.001)
+                assert np.isclose(start_peg_pose_t[1], end_peg_pose_t[1], atol=0.001)
+                assert np.isclose(start_peg_pose_t[2] - env.unwrapped.z_insertion, end_peg_pose_t[2], atol=0.001)
+
+                from spatialmath.base import rpy2r
+
+                R_start = rpy2r(start_peg_pose_rpy, order='xyz', unit='deg')
+                R_end = rpy2r(end_peg_pose_rpy, order='xyz', unit='deg')
+                assert np.allclose(R_start, R_end, atol=0.001)
+
                 observation, info = env.reset()
 
         env.close()

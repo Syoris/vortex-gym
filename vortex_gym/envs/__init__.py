@@ -1,1 +1,1 @@
-from vortex_gym.envs.Reach_Kinova_v1 import ReachKinovaV1
+from vortex_gym.envs.Insert_Kinova_v1 import InsertKinovaV1
