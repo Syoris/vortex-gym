@@ -6,9 +6,9 @@ import gymnasium as gym
 import pygetwindow as gw
 
 from vortex_gym.envs.Insert_Kinova_v1 import InsertKinovaV1
+from stable_baselines3.common.env_checker import check_env
 
-
-RENDER = False
+RENDER = True
 
 
 @pytest.fixture(scope='class')
@@ -26,9 +26,9 @@ def is_robot_home(peg_pose):
     assert np.allclose(peg_pose.R, T_peg_exp.R, atol=0.01), f'Assertion failed: {peg_pose.R} != {T_peg_exp.R}'
 
 
-class TestKinovaGen2:
+class TestInsertKinovaV1:
     def test_init(self):
-        kinova_env = InsertKinovaV1()
+        kinova_env = InsertKinovaV1(render_mode='human' if RENDER else None)
 
         # Check __init__ ok
         assert isinstance(kinova_env, InsertKinovaV1)
@@ -80,7 +80,7 @@ class TestKinovaGen2:
         """
         Test all the functions of the gym environment. No RL agent is used.
         """
-        env = gym.make('vx_envs/InsertKinova-v1', render_mode='human')
+        env = gym.make('InsertKinova-v1', render_mode='human')
         observation, info = env.reset()
 
         disp_name_window_name = 'CM Labs Graphics Qt'
@@ -100,7 +100,7 @@ class TestKinovaGen2:
         """
         Test all the functions of the gym environment. No RL agent is used.
         """
-        env = gym.make('vx_envs/InsertKinova-v1', render_mode=None)
+        env = gym.make('InsertKinova-v1', render_mode=None)
         observation, info = env.reset()
 
         disp_name_window_name = 'CM Labs Graphics Qt'
@@ -118,8 +118,8 @@ class TestKinovaGen2:
 
     def test_ikine(self):
         """To test the robot goes straight down without action"""
-
-        env = gym.make('vx_envs/InsertKinova-v1', render_mode='human')
+        env = gym.make('InsertKinova-v1', render_mode='human')
+        check_env(env)
         observation, info = env.reset()
 
         start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
@@ -144,3 +144,12 @@ class TestKinovaGen2:
                 observation, info = env.reset()
 
         env.close()
+
+    def test_2_envs(self):
+        env1 = gym.make('InsertKinova-v1', render_mode='human')
+        observation1, info2 = env1.reset()
+
+        env2 = gym.make('InsertKinova-v1', render_mode='human', eval_mode=True)
+        observation2, info2 = env2.reset()
+
+        print('Done')

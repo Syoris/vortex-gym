@@ -19,8 +19,10 @@ class InsertKinovaV1(gym.Env):
         sim_time_step=0.01,
         insertion_time=2.5,
         z_insertion=0.07,
-        misaligment_range=[-2.0, 2.0],
+        misaligment_range=(0.0, 0.0),
+        eval_mode=False,
     ):
+        print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
         self.sim_time_step = sim_time_step  # Simulation time step [sec]
         self.insertion_time = insertion_time  # Time to insert the peg in the hole [sec]
@@ -28,14 +30,18 @@ class InsertKinovaV1(gym.Env):
         self.z_insertion_speed = self.z_insertion / self.insertion_time  # Speed of the peg insertion [m/s]
 
         self.misalignment = 0.0  # Misalignment of the peg insertion. Changes the angle of the velocity [deg]
-        self.misalignment_range = np.random.uniform(
-            misaligment_range[0], misaligment_range[1]
-        )  # Range of misalignment [deg]
+        self.misalignment_range: tuple = misaligment_range  # Range of misalignment [deg]
+
+        self.eval_mode = eval_mode
 
         # Vortex environment
         self._assets_dir = ASSETS_DIR
-        self._config_file = 'config.vxc'
-        self._content_file = 'Kinova Gen2 Unjamming/Scenes/kinova_peg-in-hole.vxscene'
+        if not self.eval_mode:
+            self._config_file = 'config.vxc'
+            self._content_file = 'Kinova Gen2 Unjamming/Scenes/kinova_peg-in-hole.vxscene'
+        else:
+            self._config_file = 'config.vxc'
+            self._content_file = 'Kinova Gen2 Unjamming/Scenes/kinova_peg-in-hole_eval.vxscene'
 
         self._kinova_vx_in = KinovaVxIn()
         self._kinova_vx_out = KinovaVxOut()
@@ -48,7 +54,7 @@ class InsertKinovaV1(gym.Env):
             h=self.sim_time_step,
             config_file=self._config_file,
             content_file=self._content_file,
-            viewpoints=['Global', 'Perspective'],
+            viewpoints=['Perspective'],  # ['Global', 'Perspective'],
             render=True if render_mode == 'human' else False,
         )
 
@@ -70,32 +76,32 @@ class InsertKinovaV1(gym.Env):
         self.episode_count = 0  # Number of episodes taken in the current training session
         self.max_step_per_ep = 250  # Maximum number of steps per episode
 
+        # RL HP
         self.action_coeff = 0.01
+        self.reward_weight = 0.04
 
         # Initialize robot
         self.robot.go_home()
         self.vortex_env.save_current_frame()
 
         self.reset()
-
-        print('KinovaGen2 environment initialized')
+        print('[InsertKinovaV1.__init__] InsertKinovaV1 environment initialized')
 
     def _init_spaces(self):
-        # TODO: Get min/max obs from robot
+        # Observation space
         self.observation_space = spaces.Dict(
             {
-                'angles': spaces.Box(low=-np.pi, high=np.pi, shape=(self.robot.n_joints,), dtype=np.float32),
-                'velocities': spaces.Box(low=-np.inf, high=np.inf, shape=(self.robot.n_joints,), dtype=np.float32),
-                'torques': spaces.Box(low=-np.inf, high=np.inf, shape=(self.robot.n_joints,), dtype=np.float32),
-                'command': spaces.Box(low=-np.inf, high=np.inf, shape=(self.robot.n_joints,), dtype=np.float32),
+                'angles': self.robot.joints_angles_obs_space,
+                'velocities': self.robot.joints_vels_obs_space,
+                'torques': self.robot.joints_torques_obs_space,
+                'target_vels': self.robot.joints_vels_obs_space,
             }
         )
 
-        # TODO: Get min/max action from robot
-        # self.act_low_bound = np.array([self.robot_cfg.actuators.j2.torque_min, self.robot_cfg.actuators.j6.torque_min])
-        # self.act_high_bound = np.array([self.robot_cfg.actuators.j2.torque_max, self.robot_cfg.actuators.j6.torque_max])
-        self._actuator_low_bound = np.array([-30.5, -6.8])
-        self._actuator_high_bound = np.array([30.5, 6.8])
+        # Action space
+        # Actuator bound to scale the action
+        self._actuator_low_bound = self.robot.joints_torques_obs_space.low[[0, 2]]
+        self._actuator_high_bound = self.robot.joints_torques_obs_space.high[[0, 2]]
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
 
@@ -107,6 +113,8 @@ class InsertKinovaV1(gym.Env):
 
         # Reset vortex
         self.vortex_env.reset_saved_frame()
+
+        self.misalignment = np.random.uniform(self.misalignment_range[0], self.misalignment_range[1])
 
         # Get observation and info
         self.obs = self._get_obs()
@@ -201,27 +209,33 @@ class InsertKinovaV1(gym.Env):
     def _get_obs(self) -> dict:
         joints_states = self.robot.joints
 
-        angles = np.array([joints_states.angles[1], joints_states.angles[3], joints_states.angles[5]])
-        vels = np.array([joints_states.vels[1], joints_states.vels[3], joints_states.vels[5]])
-        torques = np.array([joints_states.torques[1], joints_states.torques[3], joints_states.torques[5]])
-        vels_cmds = np.array([joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]])
+        angles = np.array([joints_states.angles[1], joints_states.angles[3], joints_states.angles[5]], dtype=np.float32)
+        vels = np.array([joints_states.vels[1], joints_states.vels[3], joints_states.vels[5]], dtype=np.float32)
+        torques = np.array(
+            [joints_states.torques[1], joints_states.torques[3], joints_states.torques[5]], dtype=np.float32
+        )
+        vels_cmds = np.array(
+            [joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]], dtype=np.float32
+        )
 
         return {
             'angles': angles,
             'velocities': vels,
             'torques': torques,
-            'command': vels_cmds,
+            'target_vels': vels_cmds,
         }
 
     def _get_info(self) -> dict:
         """Get additional information about the environment.
 
+        - action (np.array): The action taken by the agent [j2_aug, j6_aug]
         - command (np.array): The command sent to the robot [j2, j4, j6]
         - peg_force (np.array): The force applied to the peg [fx, fy, fz]
         - peg_torque (np.array): The torque applied to the peg [tx, ty, tz]
         - peg_pose ((np.array, np.array)): The pose of the tool ([x, y, z], [roll, pitch, yaw])
         - ee_pose ((np.array, np.array)): The pose of the end-effector ([x, y, z], [roll, pitch, yaw])
         # - insertion_depth (float): The depth of the peg in the hole
+        - misaligment (float): Misaligment angle
 
         Returns:
             dict: _description_
@@ -229,19 +243,40 @@ class InsertKinovaV1(gym.Env):
         ee_pose = self.robot.ee_pose
         peg_pose = self.robot.peg_pose
 
+        peg_force = self.robot.get_peg_force()
+        peg_torque = self.robot.get_peg_torque()
+
         info_dict = {
+            'action': self.action,
             'command': self.command,
-            'peg_force': self.robot.get_peg_force(),
-            'peg_torque': self.robot.get_peg_torque(),
+            'peg_force_x': peg_force[0],
+            'peg_force_y': peg_force[1],
+            'peg_force_z': peg_force[2],
+            'peg_force_norm': np.linalg.norm(peg_force),
+            'peg_torque_x': peg_torque[0],
+            'peg_torque_y': peg_torque[1],
+            'peg_torque_z': peg_torque[2],
+            'peg_torque_norm': np.linalg.norm(peg_torque),
             'peg_pose': (peg_pose.t, peg_pose.rpy(order='xyz', unit='deg')),
+            'peg_pose_z': peg_pose.t[2],
             'ee_pose': (ee_pose.t, ee_pose.rpy(order='xyz', unit='deg')),
+            'misaligment': self.misalignment,
             # 'insertion_depth': self.robot.get_insertion_depth(),
         }
 
         return info_dict
 
     def _compute_reward(self) -> float:
-        return 0.0
+        joint_vels = self.obs['velocities']
+        joint_id_vels = self.obs['target_vels']
+        joint_torques = self.obs['torques']
+
+        reward = self.reward_weight * (
+            -abs((joint_id_vels[0] - joint_vels[0]) * joint_torques[0])
+            - abs((joint_id_vels[1] - joint_vels[1]) * joint_torques[1])
+            - abs((joint_id_vels[2] - joint_vels[2]) * joint_torques[2])
+        )
+        return reward
 
     def _build_Jacobian(self, th_current: np.ndarray) -> np.ndarray:
         """Build the manipulator's Jacobian matrix.

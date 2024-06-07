@@ -23,6 +23,8 @@ klampt = "0.9"
 pyqt5 = "5.15.2"
 pyopengl = "^3.1.7"
 roboticstoolbox-python = "^1.1.1"
+stable-baselines3 = {path = "../stable-baselines3", develop = true}
+
 
 
 [tool.poetry.group.dev.dependencies]

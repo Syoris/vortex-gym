@@ -47,6 +47,21 @@ class KinovaVxOut(VortexInterface):
     peg_torque: str = 'peg_torque'
 
 
+class KinovaVxParam(VortexInterface):
+    j2_pose_min: str = 'j2_pos_min'
+    j2_pose_max: str = 'j2_pos_max'
+    j2_torque_min: str = 'j2_torque_min'
+    j2_torque_max: str = 'j2_torque_max'
+    j4_pose_min: str = 'j4_pos_min'
+    j4_pose_max: str = 'j4_pos_max'
+    j4_torque_min: str = 'j4_torque_min'
+    j4_torque_max: str = 'j4_torque_max'
+    j6_pose_min: str = 'j6_pos_min'
+    j6_pose_max: str = 'j6_pos_max'
+    j6_torque_min: str = 'j6_torque_min'
+    j6_torque_max: str = 'j6_torque_max'
+
+
 KP = 2
 KD = 0.05
 KI = 0
@@ -56,12 +71,13 @@ KI = 0
 
 class KinovaGen2(RobotBase):
     def __init__(self, vx_env: VortexEnv, set_joints_limits: bool = False, set_forces_limits: bool = True):
+        print('[KinovaGen2.__init__] Initializing KinovaGen2 Robot')
         init_start_time = time.time()
 
         self.vx_env = vx_env
         self.vx_in = KinovaVxIn()
         self.vx_out = KinovaVxOut()
-        # self.vx_param = KinovaVxParam()
+        self.vx_param = KinovaVxParam()
 
         """Load config"""
         self._get_robot_config()
@@ -74,9 +90,9 @@ class KinovaGen2(RobotBase):
         self._joints = KinovaGen2Joints(vx_env)
         self._init_joints()
 
+        self.action = np.array([0.0, 0.0])  # Action outputed by RL
+        self.command = np.array([0.0, 0.0, 0.0])  # Vel command to send to the robot
         self._init_obs_space()
-
-        self._init_action_space()
 
         # Controller
         self.controller = PIDController(kp=KP, ki=KI, kd=KD, dt=self.vx_env.h, n_joints=self.n_joints)
@@ -131,7 +147,7 @@ class KinovaGen2(RobotBase):
         self.vx_env.set_app_mode(AppMode.SIMULATING)
         self.vx_env.app.pause(False)
 
-        print(f'KinovaGen2 initialized. Time: {time.time() - init_start_time} sec')
+        print(f'[KinovaGen2.__init__] Initializing done in {time.time() - init_start_time} sec')
 
     def _get_robot_config(self):
         """Load robot config from .yaml file"""
@@ -149,81 +165,50 @@ class KinovaGen2(RobotBase):
             self._joints.__dict__[joint].torque_min = joint_cfg.torque_min
 
     def _init_obs_space(self):
-        """Observation space (12 observations: position, vel, ideal vel, torque, for each of 3 joints)"""
-        self.obs = np.zeros(9)
+        """Init the observation spaces for the robot states"""
 
-        # Observation: [joint_positions, joint_velocities, joint_ideal_vel, joint_torques]
-        # Each one is 1x(n_joints). Total size: 4*(n_joints)
-        pos_min = [np.deg2rad(act.position_min) for act in self.robot_cfg.actuators.values()]
-        pos_max = [np.deg2rad(act.position_max) for act in self.robot_cfg.actuators.values()]
-        vel_min = [np.deg2rad(act.vel_min) for act in self.robot_cfg.actuators.values()]
-        vel_max = [np.deg2rad(act.vel_max) for act in self.robot_cfg.actuators.values()]
-        torque_min = [act.torque_min for act in self.robot_cfg.actuators.values()]
-        torque_max = [act.torque_max for act in self.robot_cfg.actuators.values()]
+        pos_min = np.array([act.position_min for act in self.robot_cfg.actuators.values()])
+        pos_max = np.array([act.position_max for act in self.robot_cfg.actuators.values()])
+        vel_min = np.array([act.vel_min for act in self.robot_cfg.actuators.values()])
+        vel_max = np.array([act.vel_max for act in self.robot_cfg.actuators.values()])
+        torque_min = np.array([act.torque_min for act in self.robot_cfg.actuators.values()])
+        torque_max = np.array([act.torque_max for act in self.robot_cfg.actuators.values()])
+
+        # self.joints_angles_obs_space = spaces.Box(low=pos_min, high=pos_max, shape=(self.n_joints,), dtype=np.float32)
+        self.joints_angles_obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.n_joints,), dtype=np.float32)
+        self.joints_vels_obs_space = spaces.Box(low=vel_min, high=vel_max, shape=(self.n_joints,), dtype=np.float32)
+        self.joints_torques_obs_space = spaces.Box(
+            low=torque_min, high=torque_max, shape=(self.n_joints,), dtype=np.float32
+        )
 
         # Minimum and Maximum joint position limits (in deg)
         self.joints_range = {}
-        self.joints_range['j2_pos_min'], self.joints_range['j2_pos_max'] = (
+        self.joints_range[self.vx_param.j2_pose_min], self.joints_range[self.vx_param.j2_pose_max] = (
             pos_min[0],
             pos_max[0],
         )
-        self.joints_range['j4_pos_min'], self.joints_range['j4_pos_max'] = (
+        self.joints_range[self.vx_param.j4_pose_min], self.joints_range[self.vx_param.j4_pose_max] = (
             pos_min[1],
             pos_max[1],
         )
-        self.joints_range['j6_pos_min'], self.joints_range['j6_pos_max'] = (
+        self.joints_range[self.vx_param.j6_pose_min], self.joints_range[self.vx_param.j6_pose_max] = (
             pos_min[2],
             pos_max[2],
         )
 
         # Minimum and Maximum joint force/torque limits (in N*m)
         self.forces_range = {}
-        self.forces_range['j2_torque_min'], self.forces_range['j2_torque_max'] = (
+        self.forces_range[self.vx_param.j2_torque_min], self.forces_range[self.vx_param.j2_torque_max] = (
             torque_min[0],
             torque_max[0],
         )
-        self.forces_range['j4_torque_min'], self.forces_range['j4_torque_max'] = (
+        self.forces_range[self.vx_param.j4_torque_min], self.forces_range[self.vx_param.j4_torque_max] = (
             torque_min[1],
             torque_max[1],
         )
-        self.forces_range['j6_torque_min'], self.forces_range['j6_torque_max'] = (
+        self.forces_range[self.vx_param.j6_torque_min], self.forces_range[self.vx_param.j6_torque_max] = (
             torque_min[2],
             torque_max[2],
-        )
-
-        obs_low_bound = np.concatenate((pos_min, vel_min, vel_min, torque_min))
-        obs_high_bound = np.concatenate((pos_max, vel_max, vel_max, torque_max))
-
-        self.observation_space = spaces.Box(
-            low=obs_low_bound,
-            high=obs_high_bound,
-            dtype=np.float32,
-        )
-
-    def _init_action_space(self):
-        """Action space (2 actions: j2 aug, j6, aug)"""
-        self.action = np.array([0.0, 0.0])  # Action outputed by RL
-        self.command = np.array([0.0, 0.0, 0.0])  # Vel command to send to the robot
-        self.next_j_vel = np.zeros(3)  # Next target vel
-        self.prev_j_vel = np.zeros(3)  # Prev target vel
-
-        self.act_low_bound = np.array(
-            [
-                self.robot_cfg.actuators.j2.torque_min,
-                self.robot_cfg.actuators.j6.torque_min,
-            ]
-        )
-        self.act_high_bound = np.array(
-            [
-                self.robot_cfg.actuators.j2.torque_max,
-                self.robot_cfg.actuators.j6.torque_max,
-            ]
-        )
-
-        self.action_space = spaces.Box(
-            low=np.array([-1, -1]),
-            high=np.array([1, 1]),
-            dtype=np.float32,
         )
 
     """ Actions """
@@ -232,6 +217,7 @@ class KinovaGen2(RobotBase):
         """
         To bring the peg on top of the hole
         """
+        print('[KinovaGen2.go_home] Going home')
         home_angles = [-46.72934, 131.1212, 87.85049]
         # home_pose = ...
         # tip_target = [0.5289988386702168, 0.08565138234155462, 3.14159353176621]  # X, Z, Rot
@@ -265,8 +251,8 @@ class KinovaGen2(RobotBase):
 
         current_state = self.joints
         start_time = self.vx_env.sim_time
-        print(f'Start time: {start_time}')
-        print(f'Start state: \n{current_state}')
+        # print(f'Start time: {start_time}')
+        # print(f'Start state: \n{current_state}')
 
         goal_reached = False
         while not goal_reached:
@@ -282,8 +268,8 @@ class KinovaGen2(RobotBase):
             if np.allclose(current_angles, target_angles, atol=0.1):
                 goal_reached = True
 
-        print(f'Operation time: {self.vx_env.sim_time - start_time}')
-        print(f'End state: \n{current_state}')
+        # print(f'Operation time: {self.vx_env.sim_time - start_time}')
+        # print(f'End state: \n{current_state}')
 
     """ Vortex interface functions """
 
