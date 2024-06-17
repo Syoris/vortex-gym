@@ -146,10 +146,32 @@ class TestInsertKinovaV1:
         env.close()
 
     def test_2_envs(self):
-        env1 = gym.make('InsertKinova-v1', render_mode='human')
-        observation1, info2 = env1.reset()
+        # Create 2 environments
+        env1 = gym.make('InsertKinova-v1', render_mode='human', viewpoint='Perspective')
+        observation1, info1 = env1.reset()
 
-        env2 = gym.make('InsertKinova-v1', render_mode='human', eval_mode=True)
+        env2 = gym.make('InsertKinova-v1', render_mode='human', viewpoint='Perspective', eval_mode=True)
         observation2, info2 = env2.reset()
 
+        # Move Env 1
+        print('Moving Env 1')
+        for _ in range(200):
+            action = [0, 0]
+            env1.step(action)
+
+        # Move Env 2
+        print('Moving Env 2')
+        for _ in range(200):
+            action = [0, 0]
+            env2.step(action)
+
+        # Reset Env 1
+        print('Resetting Env 1')
+        env1.reset()
+
+        # Reset Env 2
+        print('Resetting Env 2')
+        env2.reset()
+
+        # assert False  # Not yet working.. Reset of 2nd env doesn't work
         print('Done')

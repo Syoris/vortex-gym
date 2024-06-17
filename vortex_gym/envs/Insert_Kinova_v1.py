@@ -21,6 +21,7 @@ class InsertKinovaV1(gym.Env):
         z_insertion=0.07,
         misaligment_range=(0.0, 0.0),
         eval_mode=False,
+        viewpoint=None,
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -49,12 +50,21 @@ class InsertKinovaV1(gym.Env):
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
 
+        assert viewpoint is None or viewpoint in [
+            'Global',
+            'Perspective',
+        ], 'Invalid viewpoint. Use "Global" or "Perspective"'
+        if viewpoint is None:
+            viewpoints = ['Perspective']
+        else:
+            viewpoints = [viewpoint]
+
         self.vortex_env = VortexEnv(
             assets_dir=ASSETS_DIR,
             h=self.sim_time_step,
             config_file=self._config_file,
             content_file=self._content_file,
-            viewpoints=['Perspective'],  # ['Global', 'Perspective'],
+            viewpoints=viewpoints,  # ['Global', 'Perspective'],
             render=True if render_mode == 'human' else False,
         )
 
