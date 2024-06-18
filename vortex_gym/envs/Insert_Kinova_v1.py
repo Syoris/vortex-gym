@@ -4,7 +4,13 @@ import numpy as np
 
 from pyvortex.vortex_env import VortexEnv
 from vortex_gym.robot.kinova_gen_2 import KinovaGen2, KinovaVxIn, KinovaVxOut
+from pyvortex.vortex_classes import VortexInterface
+
 from vortex_gym import ASSETS_DIR
+
+
+class SceneVxIn(VortexInterface):
+    socket_pose: str = 'socket_pose'
 
 
 class InsertKinovaV1(gym.Env):
@@ -20,6 +26,7 @@ class InsertKinovaV1(gym.Env):
         insertion_time=2.5,
         z_insertion=0.07,
         misaligment_range=(0.0, 0.0),
+        socket_x_range=(0.5, 0.6),  # Range of the socket x position [m] (0.529, 0.529)
         eval_mode=False,
         viewpoint=None,
     ):
@@ -32,6 +39,10 @@ class InsertKinovaV1(gym.Env):
 
         self.misalignment = 0.0  # Misalignment of the peg insertion. Changes the angle of the velocity [deg]
         self.misalignment_range: tuple = misaligment_range  # Range of misalignment [deg]
+
+        self.socket_x = 0.0  # X position of the socket [m]
+        self.socket_x_range: tuple = socket_x_range
+        self.socket_default_pose = np.array([[1, 0, 0, 0.529], [0, 1, 0, -0.007], [0, 0, 1, 0.0], [0, 0, 0, 1.0]])
 
         self.eval_mode = eval_mode
 
@@ -46,6 +57,7 @@ class InsertKinovaV1(gym.Env):
 
         self._kinova_vx_in = KinovaVxIn()
         self._kinova_vx_out = KinovaVxOut()
+        self._scene_vx_in = SceneVxIn()
 
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
@@ -86,6 +98,9 @@ class InsertKinovaV1(gym.Env):
         self.episode_count = 0  # Number of episodes taken in the current training session
         self.max_step_per_ep = 250  # Maximum number of steps per episode
 
+        # Scene Parameters
+        self.socket_pose = [0, 0, 0]
+
         # RL HP
         self.action_coeff = 0.01
         self.reward_weight = 0.04
@@ -123,6 +138,7 @@ class InsertKinovaV1(gym.Env):
 
         # Reset vortex
         self.vortex_env.reset_saved_frame()
+        # self.vortex_env.pause_sim(True)
 
         self.misalignment = np.random.uniform(self.misalignment_range[0], self.misalignment_range[1])
 
@@ -130,10 +146,18 @@ class InsertKinovaV1(gym.Env):
         self.obs = self._get_obs()
         info = self._get_info()
 
+        self.socket_x = np.random.uniform(self.socket_x_range[0], self.socket_x_range[1])
+        new_socket_pose = self.socket_default_pose.copy()
+        new_socket_pose[0, 3] = self.socket_x
+        self.vortex_env.set_input(self._scene_vx_in.socket_pose, new_socket_pose)
+
         self.step_count = 0
         self.ep_completed = False
 
         self.render()
+        self.vortex_env.step()
+
+        # self.vortex_env.pause_sim(False)
 
         return self.obs, info
 
@@ -271,6 +295,7 @@ class InsertKinovaV1(gym.Env):
             'peg_pose_z': peg_pose.t[2],
             'ee_pose': (ee_pose.t, ee_pose.rpy(order='xyz', unit='deg')),
             'misaligment': self.misalignment,
+            'socket_x': self.socket_x,
             # 'insertion_depth': self.robot.get_insertion_depth(),
         }
 
@@ -351,3 +376,11 @@ class InsertKinovaV1(gym.Env):
         q_vel = np.dot(Jinv, cartesian_vel)
 
         return np.rad2deg(q_vel)
+
+    def _get_socket_pose(self) -> np.ndarray:
+        """Return the world transformation matrix of the socket.
+
+        Returns:
+            np.ndarray: 4x4 transformation matrix
+        """
+        return self.vortex_env.get_input(self._scene_vx_in.socket_pose)

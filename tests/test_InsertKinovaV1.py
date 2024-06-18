@@ -44,13 +44,13 @@ class TestInsertKinovaV1:
         assert 'angles' in obs
         assert 'velocities' in obs
         assert 'torques' in obs
-        assert 'command' in obs
+        assert 'target_vels' in obs
 
         # Check observation values
         assert obs['angles'].shape == (3,)
         assert obs['velocities'].shape == (3,)
         assert obs['torques'].shape == (3,)
-        assert obs['command'].shape == (3,)
+        assert obs['target_vels'].shape == (3,)
 
     def test_reset(self, kinova_env):
         kinova_env.reset()
@@ -118,7 +118,7 @@ class TestInsertKinovaV1:
 
     def test_ikine(self):
         """To test the robot goes straight down without action"""
-        env = gym.make('InsertKinova-v1', render_mode='human')
+        env = gym.make('InsertKinova-v1', render_mode='human', socket_x_range=(0.529, 0.529))
         check_env(env)
         observation, info = env.reset()
 
@@ -175,3 +175,34 @@ class TestInsertKinovaV1:
 
         # assert False  # Not yet working.. Reset of 2nd env doesn't work
         print('Done')
+
+    def test_socket_pose(self):
+        """Check if its possible to get the pose of the socket and move it"""
+        kinova_env = InsertKinovaV1(render_mode='human' if RENDER else None, viewpoint='Global')
+
+        # Check robot is home
+        peg_pose = kinova_env.robot.peg_pose
+        is_robot_home(peg_pose)
+
+        # Get socket pose
+        socket_pose_1 = kinova_env._get_socket_pose()
+        assert socket_pose_1 is not None
+
+        # Reset
+        kinova_env.reset()
+
+        # Socket pose should have changed
+        socket_pose_2 = kinova_env._get_socket_pose()
+        assert socket_pose_2 is not None
+
+        assert not np.allclose(socket_pose_1, socket_pose_2)
+
+    @pytest.mark.skip(reason='Not yet implemented')
+    def test_env_reset(self):
+        """Test the reset function
+        - Robot is home
+        - Socket moved
+        - misalignment
+        - ...
+        """
+        ...
