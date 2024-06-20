@@ -106,30 +106,7 @@ class KinovaGen2(RobotBase):
         self.Ltip = self.robot_cfg.links_length.Ltip  # from edge of End-Effector to tip of peg, [m], 0.16
 
         """ Robot Model """
-        d1 = 0.2755
-        d2 = 0.2050
-        d3 = 0.2050
-        d4 = 0.2073
-        d5 = 0.1038
-        d6 = 0.1038
-        d7 = 0.1150  # 0.1600
-        e2 = 0.0098
-
-        # self.robot_model = rtb.Robot.URDF(ASSETS_DIR / 'Kinova Gen2 Unjamming' / 'j2s7s300_ee.urdf')
-        self.robot_model = rtb.DHRobot(
-            [
-                RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
-                RevoluteDH(alpha=np.pi / 2),  # 2
-                RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
-                RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
-                RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
-                RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
-                RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
-            ],
-            name='KinovaGen2',
-        )
-
-        # print(self.robot_model)
+        self._init_robot_model()
 
         # Set parameters values. Done after going home so its not limited by joint torques
         self.vx_env.set_app_mode(AppMode.EDITING)
@@ -210,6 +187,50 @@ class KinovaGen2(RobotBase):
             torque_min[2],
             torque_max[2],
         )
+
+    def _init_robot_model(self):
+        """Initialize the robot model"""
+        d1 = 0.2755
+        d2 = 0.2050
+        d3 = 0.2050
+        d4 = 0.2073
+        d5 = 0.1038
+        d6 = 0.1038
+        d7 = 0.1150  # 0.1600
+        e2 = 0.0098
+
+        if self.n_joints == 7:
+            self.robot_model = rtb.DHRobot(
+                [
+                    RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
+                    RevoluteDH(alpha=np.pi / 2),  # 2
+                    RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
+                    RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
+                    RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
+                    RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
+                    RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
+                ],
+                name='KinovaGen2',
+            )
+
+        elif self.n_joints == 3:
+            self.robot_model = rtb.DHRobot(
+                [
+                    RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
+                    RevoluteDH(alpha=np.pi / 2),  # 2
+                    RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
+                    RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
+                    RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
+                    RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
+                    RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
+                ],
+                name='KinovaGen2',
+            )
+
+        else:
+            raise ValueError('Invalid number of joints')
+
+        print(self.robot_model)
 
     """ Actions """
 
