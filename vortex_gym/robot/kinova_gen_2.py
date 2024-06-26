@@ -6,7 +6,12 @@ from omegaconf import OmegaConf
 from typing import Union
 
 import roboticstoolbox as rtb
-from roboticstoolbox.robot.DHLink import RevoluteDH
+
+# from roboticstoolbox.robot.DHLink import RevoluteDH
+from roboticstoolbox.robot.ET import ET
+from roboticstoolbox.robot.ETS import ETS
+from roboticstoolbox.robot.Robot import Robot
+from roboticstoolbox.robot.Link import Link
 from spatialmath import SE3
 
 from pyvortex.vortex_env import VortexEnv
@@ -24,21 +29,37 @@ logger = logging.getLogger(__name__)
 
 
 class KinovaVxIn(VortexInterface):
-    j2_vel_id: str = 'j2_vel_id'
-    j4_vel_id: str = 'j4_vel_id'
-    j6_vel_id: str = 'j6_vel_id'
+    j1_vel_cmd: str = 'j1_vel_cmd'
+    j2_vel_cmd: str = 'j2_vel_cmd'
+    j3_vel_cmd: str = 'j3_vel_cmd'
+    j4_vel_cmd: str = 'j4_vel_cmd'
+    j5_vel_cmd: str = 'j5_vel_cmd'
+    j6_vel_cmd: str = 'j6_vel_cmd'
+    j7_vel_cmd: str = 'j7_vel_cmd'
 
 
 class KinovaVxOut(VortexInterface):
-    j2_pos_real: str = 'j2_pos'
-    j4_pos_real: str = 'j4_pos'
-    j6_pos_real: str = 'j6_pos'
-    j2_vel_real: str = 'j2_vel'
-    j4_vel_real: str = 'j4_vel'
-    j6_vel_real: str = 'j6_vel'
+    j1_pos: str = 'j1_pos'
+    j2_pos: str = 'j2_pos'
+    j3_pos: str = 'j3_pos'
+    j4_pos: str = 'j4_pos'
+    j5_pos: str = 'j5_pos'
+    j6_pos: str = 'j6_pos'
+    j7_pos: str = 'j7_pos'
+    j1_vel: str = 'j1_vel'
+    j2_vel: str = 'j2_vel'
+    j3_vel: str = 'j3_vel'
+    j4_vel: str = 'j4_vel'
+    j5_vel: str = 'j5_vel'
+    j6_vel: str = 'j6_vel'
+    j7_vel: str = 'j7_vel'
+    j1_torque: str = 'j1_torque'
     j2_torque: str = 'j2_torque'
+    j3_torque: str = 'j3_torque'
     j4_torque: str = 'j4_torque'
+    j5_torque: str = 'j5_torque'
     j6_torque: str = 'j6_torque'
+    j7_torque: str = 'j7_torque'
     ee_pose: str = 'ee_pose'
     socket_force: str = 'socket_force'
     socket_torque: str = 'socket_torque'
@@ -85,6 +106,7 @@ class KinovaGen2(RobotBase):
         # General params
         self.sim_time = 0.0
         self.step_count = 0  # Step counter
+        self.home_angles = [133.76765811, -52.71392352, -83.51841838]  # Old angles: [-46.72934, 131.1212, 87.85049]
 
         self.n_joints = 3
         self._joints = KinovaGen2Joints(vx_env)
@@ -190,42 +212,11 @@ class KinovaGen2(RobotBase):
 
     def _init_robot_model(self):
         """Initialize the robot model"""
-        d1 = 0.2755
-        d2 = 0.2050
-        d3 = 0.2050
-        d4 = 0.2073
-        d5 = 0.1038
-        d6 = 0.1038
-        d7 = 0.1150  # 0.1600
-        e2 = 0.0098
-
         if self.n_joints == 7:
-            self.robot_model = rtb.DHRobot(
-                [
-                    RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
-                    RevoluteDH(alpha=np.pi / 2),  # 2
-                    RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
-                    RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
-                    RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
-                    RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
-                    RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
-                ],
-                name='KinovaGen2',
-            )
+            self.robot_model = Kinova7DoFModel()
 
         elif self.n_joints == 3:
-            self.robot_model = rtb.DHRobot(
-                [
-                    RevoluteDH(alpha=np.pi / 2, d=d1, qlim=[0, 0]),  # 1
-                    RevoluteDH(alpha=np.pi / 2),  # 2
-                    RevoluteDH(alpha=np.pi / 2, d=-(d2 + d3)),  # 3
-                    RevoluteDH(alpha=np.pi / 2, d=-e2, offset=np.pi),  # 4
-                    RevoluteDH(alpha=np.pi / 2, d=-(d4 + d5)),  # 5
-                    RevoluteDH(alpha=np.pi / 2, offset=np.pi),  # 6
-                    RevoluteDH(alpha=0, d=-(d6 + d7), offset=np.pi),  # 7
-                ],
-                name='KinovaGen2',
-            )
+            self.robot_model = Kinova3DoFModel()
 
         else:
             raise ValueError('Invalid number of joints')
@@ -239,12 +230,15 @@ class KinovaGen2(RobotBase):
         To bring the peg on top of the hole
         """
         print('[KinovaGen2.go_home] Going home')
-        home_angles = [-46.72934, 131.1212, 87.85049]
         # home_pose = ...
         # tip_target = [0.5289988386702168, 0.08565138234155462, 3.14159353176621]  # X, Z, Rot
+        q0 = self.joints.angles
+        # self.go_to_angles([q0[1], q0[3], q0[5]])
 
-        self.go_to_angles([0.0, home_angles[1], home_angles[2]])
-        self.go_to_angles([home_angles[0], home_angles[1], home_angles[2]])
+        # In three steps to avoid contact w/ socket
+        self.go_to_angles([q0[1], self.home_angles[1], q0[5]])
+        self.go_to_angles([q0[1], self.home_angles[1], self.home_angles[2]])
+        self.go_to_angles([self.home_angles[0], self.home_angles[1], self.home_angles[2]])
 
     def go_to_angles(self, target_angles: Union[list, dict], degrees=True):
         """
@@ -271,7 +265,7 @@ class KinovaGen2(RobotBase):
         self.vx_env.app.pause(False)
 
         current_state = self.joints
-        start_time = self.vx_env.sim_time
+        # start_time = self.vx_env.sim_time
         # print(f'Start time: {start_time}')
         # print(f'Start state: \n{current_state}')
 
@@ -291,6 +285,33 @@ class KinovaGen2(RobotBase):
 
         # print(f'Operation time: {self.vx_env.sim_time - start_time}')
         # print(f'End state: \n{current_state}')
+
+    def go_to_pose(self, pose: np.array, orientation: np.array, raise_exception=False):
+        """
+        Moves the robot arm to the specified target pose.
+
+        Parameters:
+        - pose (np.array): The target 3D position of the robot arm.
+        - orientation (np.array): The target rotation of the robot arm. The rotation is in degrees and is represented as a 3-element array [roll, pitch, yaw] using the `xyz` [convention](https://bdaiinstitute.github.io/spatialmath-python/3d_pose_SE3.html#spatialmath.pose3d.SE3.RPY).
+        - raise_exception (bool): If True, raises an exception if the target pose is unreachable. If False, prints a warning message if the target pose is unreachable.
+
+        Computes the inverse kinematics to find the joint angles that will move the robot arm to the target pose and then moves the robot arm to those joint angles. No closed loop on cartesian pose.
+        """
+        T_goal = SE3.Trans(pose) * SE3.RPY(orientation, order='xyz', unit='deg')
+
+        q0 = self.joints.angles
+        if self.n_joints == 3:
+            q0 = [q0[1], q0[3], q0[5]]
+
+        sol = self.robot_model.ikine_LM(T_goal, q0=np.deg2rad(q0), joint_limits=True)
+
+        if not sol.success:
+            if raise_exception:
+                raise ValueError('Inverse kineamtics failed - Target pose is unreachable')
+            else:
+                print('Target pose is unreachable')
+
+        self.go_to_angles(list(sol.q), degrees=False)
 
     """ Vortex interface functions """
 
@@ -473,10 +494,10 @@ class KinovaGen2Joints:
             180.0,
             -10.0,
             10.0,
-            vx_angle_name=self._vx_out.j2_pos_real,
-            vx_vel_name=self._vx_out.j2_vel_real,
+            vx_angle_name=self._vx_out.j2_pos,
+            vx_vel_name=self._vx_out.j2_vel,
             vx_torque_name=self._vx_out.j2_torque,
-            vx_vel_cmd_name=self._vx_in.j2_vel_id,
+            vx_vel_cmd_name=self._vx_in.j2_vel_cmd,
             angle_offset=0.0,
         )
         self.j3 = Joint('j3', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
@@ -489,10 +510,10 @@ class KinovaGen2Joints:
             180.0,
             -10.0,
             10.0,
-            vx_angle_name=self._vx_out.j4_pos_real,
-            vx_vel_name=self._vx_out.j4_vel_real,
+            vx_angle_name=self._vx_out.j4_pos,
+            vx_vel_name=self._vx_out.j4_vel,
             vx_torque_name=self._vx_out.j4_torque,
-            vx_vel_cmd_name=self._vx_in.j4_vel_id,
+            vx_vel_cmd_name=self._vx_in.j4_vel_cmd,
             angle_offset=0.0,
         )
         self.j5 = Joint('j5', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
@@ -505,10 +526,10 @@ class KinovaGen2Joints:
             180.0,
             -10.0,
             10.0,
-            vx_angle_name=self._vx_out.j6_pos_real,
-            vx_vel_name=self._vx_out.j6_vel_real,
+            vx_angle_name=self._vx_out.j6_pos,
+            vx_vel_name=self._vx_out.j6_vel,
             vx_torque_name=self._vx_out.j6_torque,
-            vx_vel_cmd_name=self._vx_in.j6_vel_id,
+            vx_vel_cmd_name=self._vx_in.j6_vel_cmd,
             angle_offset=0.0,
         )
         self.j7 = Joint('j7', vortex_env, -180.0, 180.0, -180.0, 180.0, -10.0, 10.0)
@@ -589,3 +610,97 @@ class PIDController:
         velocities = p + i + d
 
         return velocities.tolist()
+
+
+class Kinova7DoFModel(Robot):
+    """
+    Create model of a generic seven degree-of-freedom robot
+
+    robot = GenericSeven() creates a robot object. This robot is represented
+    using the elementary transform sequence (ETS).
+    """
+
+    def __init__(self):
+        d1 = 0.2755
+        d2 = 0.2050
+        d3 = 0.2050
+        d4 = 0.2073
+        d5 = 0.1038
+        d6 = 0.1038
+        d7 = 0.1150  # 0.1600
+        e2 = 0.0098
+
+        l0 = Link(ETS(ET.Rx(np.pi)) * ET.Rz(np.pi) * ET.Rz(), name='link0', parent=None)  # J1
+
+        l1 = Link(ET.tz(-d1) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link1', parent=l0)  # J2
+
+        l2 = Link(ET.ty(-d2) * ET.Rx(np.pi / 2) * ET.Rz(), name='link2', parent=l1)  # J3
+
+        l3 = Link(ET.tz(d3) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link3', parent=l2)  # J4
+
+        l4 = Link(ET.ty(d4) * ET.tz(-e2) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link4', parent=l3)  # J5
+
+        l5 = Link(ET.tz(-d5) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link5', parent=l4)  # J6
+
+        l6 = Link(ET.ty(d6) * ET.Rx(np.pi / 2) * ET.Rz(), name='link6', parent=l5)  # J7
+
+        ee = Link(ET.tz(-d7) * ET.Rx(np.pi) * ET.Rz(-np.pi / 2), name='ee', parent=l6)  # EE
+
+        elinks = [l0, l1, l2, l3, l4, l5, l6, ee]
+
+        super(Kinova7DoFModel, self).__init__(elinks, name='Kinova7DoF')
+
+        self.qr = np.deg2rad(np.array([180, 240, 0, 60, 90, 90, 180]))  # DH Example position
+        self.qc = np.deg2rad(np.array([180, 180, 180, 180, 180, 180, 180]))  # Candle like position
+        self.qz = np.zeros(7)
+
+        self.addconfiguration('qr', self.qr)
+        self.addconfiguration('qz', self.qz)
+        self.addconfiguration('qc', self.qc)
+
+
+class Kinova3DoFModel(Robot):
+    """
+    Create model of a generic seven degree-of-freedom robot
+
+    robot = GenericSeven() creates a robot object. This robot is represented
+    using the elementary transform sequence (ETS).
+    """
+
+    def __init__(self):
+        d1 = 0.2755
+        d2 = 0.2050
+        d3 = 0.2050
+        d4 = 0.2073
+        d5 = 0.1038
+        d6 = 0.1038
+        d7 = 0.1150  # 0.1600
+        e2 = 0.0098
+
+        l0 = Link(ETS(ET.Rx(np.pi)) * ET.Rz(np.pi) * ET.Rz(0), name='link0', parent=None)  # J1
+
+        l1 = Link(ET.tz(-d1) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link1', parent=l0)  # J2
+
+        l2 = Link(ET.ty(-d2) * ET.Rx(np.pi / 2) * ET.Rz(0), name='link2', parent=l1)  # J3
+
+        l3 = Link(ET.tz(d3) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link3', parent=l2)  # J4
+
+        l4 = Link(ET.ty(d4) * ET.tz(-e2) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(0), name='link4', parent=l3)  # J5
+
+        l5 = Link(ET.tz(-d5) * ET.Rx(np.pi / 2) * ET.Rz(np.pi) * ET.Rz(), name='link5', parent=l4)  # J6
+
+        l6 = Link(ET.ty(d6) * ET.Rx(np.pi / 2) * ET.Rz(0), name='link6', parent=l5)  # J7
+
+        ee = Link(ET.tz(-d7) * ET.Rx(np.pi) * ET.Rz(-np.pi / 2), name='ee', parent=l6)  # EE
+
+        elinks = [l0, l1, l2, l3, l4, l5, l6, ee]
+
+        super(Kinova3DoFModel, self).__init__(elinks, name='Kinova3DoF')
+
+        # self.qr = np.array([0, -0.3, 0, -2.2, 0, 2.0, np.pi / 4])
+        # self.qz = np.zeros(3)
+        self.qc = np.deg2rad(np.array([180, 180, 180]))
+
+        # self.addconfiguration('qr', self.qr)
+        # self.addconfiguration('qz', self.qz)
+        self.addconfiguration('qc', self.qc)

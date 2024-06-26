@@ -12,16 +12,17 @@ from pyvortex.vortex_classes import AppMode
 
 
 import matplotlib
+import matplotlib.pyplot as plt
 
-# import matplotlib.pyplot as plt
 from spatialmath import SE3
 
 matplotlib.use('TkAgg')
 
 RENDER_VX = False
+PLOT = False
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture(scope='class')
 def vortex_env():
     """Create a Vortex environment from the env_files fixture
 
@@ -37,16 +38,16 @@ def vortex_env():
         assets_dir=ASSETS_DIR,
         config_file=config_file,
         content_file=content_file,
-        viewpoints=['Global'],
+        viewpoints=['Global', 'Perspective'],
         render=RENDER_VX,
     )
 
     vortex_env.set_app_mode(AppMode.SIMULATING)
     vortex_env.app.pause(False)
 
-    return vortex_env
+    yield vortex_env
 
-    # vortex_env = None
+    vortex_env = None
 
 
 class TestKinovaGen2:
@@ -139,6 +140,10 @@ class TestKinovaGen2:
         print(start_state)
         start_time = vortex_env.sim_time
 
+        j2_angle_start = start_state.j2.angle
+        j4_angle_start = start_state.j4.angle
+        j6_angle_start = start_state.j6.angle
+
         # Sim for `time`
         for _ in range(int(time / vortex_env.get_simulation_time_step())):
             sim_time = vortex_env.sim_time
@@ -151,13 +156,19 @@ class TestKinovaGen2:
         print('\n\n Final State:')
         print(final_state)
 
-        j2_angle = final_state.j2.angle
-        j4_angle = final_state.j4.angle
-        j6_angle = final_state.j6.angle
+        j2_angle_final = final_state.j2.angle
+        j4_angle_final = final_state.j4.angle
+        j6_angle_final = final_state.j6.angle
 
-        assert math.isclose(j2_angle, j2_goal, abs_tol=2), f'Assertion failed: {j2_angle} != {j2_goal}'
-        assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
-        assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
+        assert math.isclose(
+            j2_angle_final - j2_angle_start, j2_goal, abs_tol=2
+        ), f'Assertion failed: {-(j2_angle_start - j2_angle_final)} != {j2_goal}'
+        assert math.isclose(
+            j4_angle_final - j4_angle_start, j4_goal, abs_tol=2
+        ), f'Assertion failed: {-(j4_angle_start - j4_angle_final)} != {j4_goal}'
+        assert math.isclose(
+            j6_angle_final - j6_angle_start, j6_goal, abs_tol=2
+        ), f'Assertion failed: {-(j6_angle_start - j6_angle_final)} != {j6_goal}'
 
     def test_KinovaGen2Joints(self, vortex_env):
         """Test KinovaGen2Joints class. Check if attributes returned are correct"""
@@ -189,8 +200,8 @@ class TestKinovaGen2:
 
     def test_go_to_angles(self, vortex_env):
         # Goals
-        j2_goal = -45  # deg
-        j4_goal = 100  # deg
+        j2_goal = 135  # deg
+        j4_goal = 190  # deg
         j6_goal = 90  # deg
 
         kinova_robot = KinovaGen2(vortex_env)
@@ -210,10 +221,23 @@ class TestKinovaGen2:
         assert math.isclose(j4_angle, j4_goal, abs_tol=2), f'Assertion failed: {j4_angle} != {j4_goal}'
         assert math.isclose(j6_angle, j6_goal, abs_tol=2), f'Assertion failed: {j6_angle} != {j6_goal}'
 
-    # TODO: Test for all 7 joints
+    def test_go_home(self, vortex_env):
+        kinova_robot = KinovaGen2(vortex_env)
+        kinova_robot.go_home()
+
+        sim_angles = kinova_robot.joints.angles
+        sim_angles = [sim_angles[1], sim_angles[3], sim_angles[5]]
+        expected_angles = kinova_robot.home_angles
+
+        ang_tol = 2  # deg
+        assert np.allclose(
+            sim_angles, expected_angles, atol=ang_tol
+        ), f'Assertion failed: {sim_angles} != {expected_angles}'
+
     @pytest.mark.parametrize(
         'angles_goal',
         [
+            [180, 180, 0],
             [-45, 0, 0],
             [0, -45, 0],
             [0, 0, -45],
@@ -221,9 +245,10 @@ class TestKinovaGen2:
             [45, 45, 45],
         ],
     )
-    def test_rbt_fkine(self, vortex_env, angles_goal):
+    def test_rbt_fkine_3dof(self, vortex_env, angles_goal):
         kinova_robot = KinovaGen2(vortex_env)
         kinova_robot.go_to_angles(angles_goal)
+        vortex_env.step()
 
         # Get state
         angles = kinova_robot.joints.angles
@@ -234,77 +259,113 @@ class TestKinovaGen2:
         vx_rot = vx_pose.R
 
         # EE pose from forward kin
-        angles_rad = [np.deg2rad(x) for x in angles]
-        # kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
+        angles_rad = np.deg2rad(angles)[[1, 3, 5]]
+        if PLOT:
+            kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
         Te = kinova_robot.robot_model.fkine(angles_rad)
 
         fkine_trans = Te.t
         fkine_rot = Te.R
 
+        # --- Uncomment to plot frames ---
+        if PLOT:
+            kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
+            SE3().plot(frame='0', dims=[-3, 3], color='black')
+            vx_pose.plot(frame='EE', dims=[-1, 1], color='red')
+            Te.plot(frame='ee', dims=[-1, 1], color='green')
+
         tol = 0.001  # 1mm
         assert np.allclose(vx_trans, fkine_trans, atol=tol), f'Assertion failed: {vx_trans} != {fkine_trans}'
         assert np.allclose(vx_rot, fkine_rot, atol=tol), f'Assertion failed: {vx_rot} != {fkine_rot}'
 
-        # # --- Uncomment to plot frames ---
-        # plt.figure()  # create a new figure
-        # kinova_robot.robot_model.plot(angles_rad, backend='pyplot')
-        # SE3().plot(frame='0', dims=[-3, 3], color='black')
-        # vx_pose.plot(frame='EE', dims=[-1, 1], color='red')
-        # Te.plot(frame='ee', dims=[-1, 1], color='green')
-        # ...
+    @pytest.mark.skip(reason='Not implemented yet')
+    def test_rbt_fkine_7dof(self, vortex_env, angles_goal): ...
 
     @pytest.mark.parametrize(
         'pose_goal',  # ([x, y, z], [roll, pitch, yaw])
         [
-            (
-                [0.66475637, -0.0098, 0.93941385],
-                [-180, -45, -180],
-            ),  # [-3.14159265, -0.78603249, -3.14159265]
+            [[0.65, -0.0098, 0.75], [0, 90, 90]],  # Facing forward (peg down)
+            [[0.65, -0.0098, 0.3], [-90, 0, 180]],  # Facing down
         ],
     )
-    def test_rbt_ikine_sol(self, vortex_env, pose_goal):
+    def test_rbt_ikine_sol_3dof(self, vortex_env, pose_goal):
         kinova_robot = KinovaGen2(vortex_env)
         rbt_model = kinova_robot.robot_model
 
-        # TODO: Choose between angles or Tep as arguments to test
-        Tep = rbt_model.fkine(np.deg2rad([0, -45, 0, 0, 0, 0, 0]))
-        # Tep = SE3(pose_goal[0]) * SE3.RPY(np.deg2rad(pose_goal[1]), order='xyz')
+        # Tep = rbt_model.fkine(np.deg2rad([0, -45, 0, 0, 0, 0, 0]))
+        T_goal = SE3.Trans(pose_goal[0]) * SE3.RPY(pose_goal[1], order='xyz', unit='deg')
 
         # IKine solution
-        sol = rbt_model.ikine_LM(
-            Tep, q0=[0, 0, 0, 0, 0, 0, 0], joint_limits=False, ilimit=1000, slimit=5000, mask=[1, 1, 1, 0, 0, 0]
-        )
+        sol = rbt_model.ikine_LM(T_goal, q0=[0, 0, 0], joint_limits=False)
         print(f'Success: {sol.success}')
         print(sol.q)
 
         # Move robot to solution
-        kinova_robot.go_to_angles([sol.q[1], sol.q[3], sol.q[5]], degrees=False)
+        kinova_robot.go_to_angles(list(sol.q), degrees=False)
         sim_pose = kinova_robot.ee_pose
 
-        # # --- Uncomment to plot frames ---
-        # rbt_model.plot(sol.q, backend='pyplot')
-        # SE3().plot(frame='0', dims=[-3, 3], color='black')
-        # sim_pose.plot(frame='sim', dims=[-1, 1], color='red')
-        # Tep.plot(frame='Tep', dims=[-1, 1], color='green')
+        # --- Uncomment to plot frames ---
+        if PLOT:
+            rbt_model.plot(sol.q, backend='pyplot')
+            SE3().plot(frame='0', dims=[-3, 3], color='black')
+            sim_pose.plot(frame='sim', dims=[-1, 1], color='red')
+            T_goal.plot(frame='goal', dims=[-1, 1], color='green')
+            plt.show(block=False)
 
         # Assert
         assert sol.success, 'IKine failed'
-        # tol = 0.001  # 1mm
-        # assert np.allclose(sim_pose.t, Tep.t, atol=tol), f'Assertion failed: {sim_pose.t} != {Tep.t}'
-        # assert np.allclose(sim_pose.R, Tep.R, atol=tol), f'Assertion failed: {sim_pose.R} != {Tep.R}'
 
-    # TODO
-    # def test_go_to_pose(self, vortex_env, pose_goal):
-    #     ...
+        tol = 0.01  # 1cm
+        assert np.allclose(sim_pose.t, T_goal.t, atol=tol), f'Assertion failed: {sim_pose.t} != {T_goal.t}'
+        assert np.allclose(sim_pose.R, T_goal.R, atol=tol), f'Assertion failed: {sim_pose.R} != {T_goal.R}'
 
-    def test_peg_pose(self, vortex_env):
-        kinova_robot = KinovaGen2(vortex_env)
 
-        peg_pose = kinova_robot.peg_pose
-        # print(peg_pose)
+"""
+Tests requiring a new environment
+"""
 
-        T_peg_exp = SE3([0.160, -0.007, 1.215]) * SE3.RPY(np.deg2rad([0, 90, 0]), order='xyz')
 
-        tol = 0.001  # 1mm
-        assert np.allclose(peg_pose.t, T_peg_exp.t, atol=tol), f'Assertion failed: {peg_pose.t} != {T_peg_exp.t}'
-        assert np.allclose(peg_pose.R, T_peg_exp.R, atol=tol), f'Assertion failed: {peg_pose.R} != {T_peg_exp.R}'
+def test_peg_pose(vortex_env):
+    kinova_robot = KinovaGen2(vortex_env)
+
+    peg_pose = kinova_robot.peg_pose
+    # print(peg_pose)
+
+    T_peg_exp = SE3([0.160, -0.007, 1.215]) * SE3.RPY(np.deg2rad([0, 90, 0]), order='xyz')
+
+    tol = 0.001  # 1mm
+    assert np.allclose(peg_pose.t, T_peg_exp.t, atol=tol), f'Assertion failed: {peg_pose.t} != {T_peg_exp.t}'
+    assert np.allclose(peg_pose.R, T_peg_exp.R, atol=tol), f'Assertion failed: {peg_pose.R} != {T_peg_exp.R}'
+
+
+@pytest.mark.parametrize(
+    'pose_goal',  # [[x, y, z], [roll, pitch, yaw], [j2_exp, j4_exp, j6_exp]]
+    [
+        [[0.55, -0.0098, 0.25], [0, 90, 90], [[133.76, -52.71, -83.51]]],  # Top of socket,  Facing forward (peg down)
+        [[0.75, -0.0098, 0.25], [0, 90, 90], [122.95, -94.03, -53.01]],  # Top of socket,  Facing forward (peg down)
+        [[0.55, -0.0098, 0.35], [-90, 0, 180], [143.9, -118.9, 82.0]],  # Top of socket,  Facing forward (peg down)
+    ],
+)
+def test_go_to_pose(vortex_env, pose_goal):
+    T_goal = SE3.Trans(pose_goal[0]) * SE3.RPY(pose_goal[1], order='xyz', unit='deg')
+    expected_angles = pose_goal[2]
+
+    kinova_robot = KinovaGen2(vortex_env)
+    kinova_robot.go_home()
+
+    # Move robot to goal pose
+    kinova_robot.go_to_pose(pose=pose_goal[0], orientation=pose_goal[1], raise_exception=True)
+
+    # Get current pose
+    sim_pose = kinova_robot.ee_pose
+    sim_angles = kinova_robot.joints.angles
+    sim_angles = [sim_angles[1], sim_angles[3], sim_angles[5]]
+
+    tol = 0.01  # 1cm
+    assert np.allclose(sim_pose.t, T_goal.t, atol=tol), f'Assertion failed: {sim_pose.t} != {T_goal.t}'
+    assert np.allclose(sim_pose.R, T_goal.R, atol=tol), f'Assertion failed: {sim_pose.R} != {T_goal.R}'
+
+    ang_tol = 2  # deg
+    assert np.allclose(
+        sim_angles, expected_angles, atol=ang_tol
+    ), f'Assertion failed: {sim_angles} != {expected_angles}'
