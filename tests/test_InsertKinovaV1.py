@@ -18,7 +18,7 @@ def kinova_env():
 
 
 def is_robot_home(peg_pose):
-    peg_exp_t = [0.5289988386702168, -0.007, 0.08565138234155462]
+    peg_exp_t = [0.55, -0.007, 0.09]
     T_peg_exp = SE3(peg_exp_t) * SE3.RPY(np.deg2rad([0, 180, 0]), order='xyz')
 
     tol = 0.001  # 1mm
@@ -118,14 +118,16 @@ class TestInsertKinovaV1:
 
     def test_ikine(self):
         """To test the robot goes straight down without action"""
-        env = gym.make('InsertKinova-v1', render_mode='human', socket_x_range=(0.529, 0.529))
+        env = gym.make(
+            'InsertKinova-v1', render_mode='human', socket_x_offset=0.0, viewpoint='Perspective', eval_mode=True
+        )
         check_env(env)
         observation, info = env.reset()
 
         start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+        action = np.zeros(3)
 
         for _ in range(1000):
-            action = np.zeros(2)
             observation, reward, terminated, truncated, info = env.step(action)
 
             if terminated or truncated:
@@ -178,7 +180,7 @@ class TestInsertKinovaV1:
 
     def test_socket_pose(self):
         """Check if its possible to get the pose of the socket and move it"""
-        kinova_env = InsertKinovaV1(render_mode='human' if RENDER else None, viewpoint='Global')
+        kinova_env = InsertKinovaV1(render_mode='human' if RENDER else None, viewpoint='Perspective')
 
         # Check robot is home
         peg_pose = kinova_env.robot.peg_pose

@@ -25,24 +25,31 @@ class InsertKinovaV1(gym.Env):
         sim_time_step=0.01,
         insertion_time=2.5,
         z_insertion=0.07,
-        misaligment_range=(0.0, 0.0),
-        socket_x_range=(0.5, 0.6),  # Range of the socket x position [m] (0.529, 0.529)
+        speed_misaligment_range=(0.0, 0.0),
+        socket_x_range=(0.55, 0.55),  # Range of the socket x position [m] (0.529, 0.529)
+        socket_x_offset=0.005,  # Offset of the socket x position [m]
         eval_mode=False,
         viewpoint=None,
+        ctrl_freq=50,
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
         self.sim_time_step = sim_time_step  # Simulation time step [sec]
+        self.ctrl_freq = ctrl_freq  # Control frequency [Hz]
+        self._n_sim_steps = int((1 / self.sim_time_step) / self.ctrl_freq)  # Number of steps per control frequency
+
         self.insertion_time = insertion_time  # Time to insert the peg in the hole [sec]
         self.z_insertion = z_insertion  # Depth of the peg insertion [m]
         self.z_insertion_speed = self.z_insertion / self.insertion_time  # Speed of the peg insertion [m/s]
 
-        self.misalignment = 0.0  # Misalignment of the peg insertion. Changes the angle of the velocity [deg]
-        self.misalignment_range: tuple = misaligment_range  # Range of misalignment [deg]
+        self.speed_misalignment = 0.0  # Misalignment of the peg insertion. Changes the angle of the velocity [deg]
+        self.speed_misalignment_range: tuple = speed_misaligment_range  # Range of misalignment [deg]
 
-        self.socket_x = 0.0  # X position of the socket [m]
+        self.socket_x = 0.550  # X position of the socket [m]
         self.socket_x_range: tuple = socket_x_range
-        self.socket_default_pose = np.array([[1, 0, 0, 0.529], [0, 1, 0, -0.007], [0, 0, 1, 0.0], [0, 0, 0, 1.0]])
+        self.socket_x_offset = socket_x_offset  # Offset of the socket x position [m]
+        self.socket_default_pose = np.array([[1, 0, 0, 0.550], [0, 1, 0, -0.007], [0, 0, 1, 0.0], [0, 0, 0, 1.0]])
+        self.randomization_start = 20  # Number of episodes before randomizing the socket position
 
         self.eval_mode = eval_mode
 
@@ -91,25 +98,28 @@ class InsertKinovaV1(gym.Env):
         self.ik_joints_vels = np.zeros(3)  # Joint velocities computed by the IK
 
         self.obs = None  # observation dict from the last step, updated in `step` method
+        self.obs_normalized = None  # observation dict from the last step, normalized
         self.info = None  # info dict from the last step, updated in `step` method
         self.ep_completed = False  # Flag indicating if the simulation is completed
 
         self.step_count = 0  # Number of steps taken in the current episode
         self.episode_count = 0  # Number of episodes taken in the current training session
-        self.max_step_per_ep = 250  # Maximum number of steps per episode
+        self.max_step_per_ep = int(insertion_time * self.ctrl_freq)  # Maximum number of steps per episode
 
         # Scene Parameters
         self.socket_pose = [0, 0, 0]
 
         # RL HP
-        self.action_coeff = 0.01
-        self.reward_weight = 0.04
+        self.action_coeff = 0.05
+        self.reward_weight = 1
+        self.reward_clipping = 10
 
         # Initialize robot
         self.robot.go_home()
         self.vortex_env.save_current_frame()
 
         self.reset()
+        self.episode_count = 0  # Number of episodes taken in the current training session
         print('[InsertKinovaV1.__init__] InsertKinovaV1 environment initialized')
 
     def _init_spaces(self):
@@ -124,11 +134,17 @@ class InsertKinovaV1(gym.Env):
         )
 
         # Action space
-        # Actuator bound to scale the action
+        # Actuator bounds - Torques
         self._actuator_low_bound = self.robot.joints_torques_obs_space.low[[0, 2]]
         self._actuator_high_bound = self.robot.joints_torques_obs_space.high[[0, 2]]
+        self._joint_max_torque = 30.5  # Maximum
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        # Actuator bounds - Velocities
+        self._joint_max_speed = (
+            30.0  # Maximum joint speed [deg/s] (Manually set for now, all joints set to the same speed)
+        )
+
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
 
     # --------------------------------------------------------------------------------------------
     # MARK: Gym methods
@@ -140,18 +156,23 @@ class InsertKinovaV1(gym.Env):
         self.vortex_env.reset_saved_frame()
         # self.vortex_env.pause_sim(True)
 
-        self.misalignment = np.random.uniform(self.misalignment_range[0], self.misalignment_range[1])
+        self.speed_misalignment = np.random.uniform(self.speed_misalignment_range[0], self.speed_misalignment_range[1])
 
         # Get observation and info
-        self.obs = self._get_obs()
+        self.obs, self.obs_normalized = self._get_obs()
         info = self._get_info()
 
-        self.socket_x = np.random.uniform(self.socket_x_range[0], self.socket_x_range[1])
-        new_socket_pose = self.socket_default_pose.copy()
-        new_socket_pose[0, 3] = self.socket_x
-        self.vortex_env.set_input(self._scene_vx_in.socket_pose, new_socket_pose)
+        if (self.episode_count > self.randomization_start) or self.eval_mode:
+            self.socket_x = np.random.uniform(self.socket_x_range[0], self.socket_x_range[1])
+            socket_x_offset = np.random.uniform(-self.socket_x_offset, self.socket_x_offset)
+            self.socket_x += socket_x_offset
+
+            new_socket_pose = self.socket_default_pose.copy()
+            new_socket_pose[0, 3] = self.socket_x
+            self.vortex_env.set_input(self._scene_vx_in.socket_pose, new_socket_pose)
 
         self.step_count = 0
+        self.episode_count += 1
         self.ep_completed = False
 
         self.render()
@@ -193,11 +214,21 @@ class InsertKinovaV1(gym.Env):
         # self.ik_joints_vels = [5.0, 5.0, 5.0]
 
         # Scale actions
-        act_j2 = self.action_coeff * self.action[0] * self._actuator_high_bound[0]
-        act_j6 = self.action_coeff * self.action[1] * self._actuator_high_bound[1]
+        # # 2 ACTIONS
+        # act_j2 = self.action_coeff * self.action[0] * self._actuator_high_bound[0]
+        # act_j6 = self.action_coeff * self.action[1] * self._actuator_high_bound[1]
 
-        j2_vel = self.ik_joints_vels[0] - act_j2
-        j4_vel = self.ik_joints_vels[1] + act_j6 - act_j2
+        # j2_vel = self.ik_joints_vels[0] - act_j2
+        # j4_vel = self.ik_joints_vels[1] + act_j6 - act_j2
+        # j6_vel = self.ik_joints_vels[2] + act_j6
+
+        # 3 ACTIONS
+        act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
+        act_j4 = self.action_coeff * self.action[1] * self._joint_max_speed
+        act_j6 = self.action_coeff * self.action[2] * self._joint_max_speed
+
+        j2_vel = self.ik_joints_vels[0] + act_j2
+        j4_vel = self.ik_joints_vels[1] + act_j4
         j6_vel = self.ik_joints_vels[2] + act_j6
 
         # Apply actions
@@ -205,10 +236,11 @@ class InsertKinovaV1(gym.Env):
         self.robot.set_joints_vels(self.command)
 
         # Step the simulation
-        self.vortex_env.step()
+        for _ in range(self._n_sim_steps):
+            self.vortex_env.step()
 
         # Observations
-        self.obs = self._get_obs()
+        self.obs, self.obs_normalized = self._get_obs()
 
         # Info
         self.info = self._get_info()  # plug force and torque
@@ -221,7 +253,7 @@ class InsertKinovaV1(gym.Env):
         if self.step_count >= self.max_step_per_ep:
             self.ep_completed = True
 
-        return self.obs, reward, self.ep_completed, terminated, self.info
+        return self.obs_normalized, reward, self.ep_completed, terminated, self.info
 
     def render(self):
         """Render the environment.
@@ -252,12 +284,30 @@ class InsertKinovaV1(gym.Env):
             [joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]], dtype=np.float32
         )
 
-        return {
+        obs = {
             'angles': angles,
             'velocities': vels,
             'torques': torques,
             'target_vels': vels_cmds,
         }
+        # Normalize the observations
+
+        vels_normalized = vels / self._joint_max_speed
+        vels_cmds_normalized = vels_cmds / self._joint_max_speed
+        torques_normalized = torques / self._joint_max_torque
+        angles_normalized = angles / 180.0
+
+        obs_normalized = {
+            'angles': angles_normalized,
+            'velocities': vels_normalized,
+            'torques': torques_normalized,
+            'target_vels': vels_cmds_normalized,
+        }
+
+        # TODO: Add noise to the observations
+        ...
+
+        return obs, obs_normalized
 
     def _get_info(self) -> dict:
         """Get additional information about the environment.
@@ -294,7 +344,7 @@ class InsertKinovaV1(gym.Env):
             'peg_pose': (peg_pose.t, peg_pose.rpy(order='xyz', unit='deg')),
             'peg_pose_z': peg_pose.t[2],
             'ee_pose': (ee_pose.t, ee_pose.rpy(order='xyz', unit='deg')),
-            'misaligment': self.misalignment,
+            'speed_misaligment': self.speed_misalignment,
             'socket_x': self.socket_x,
             # 'insertion_depth': self.robot.get_insertion_depth(),
         }
@@ -302,15 +352,15 @@ class InsertKinovaV1(gym.Env):
         return info_dict
 
     def _compute_reward(self) -> float:
-        joint_vels = self.obs['velocities']
-        joint_id_vels = self.obs['target_vels']
-        joint_torques = self.obs['torques']
+        obs = self.obs_normalized
+        joint_vels = obs['velocities']
+        joint_id_vels = obs['target_vels']
+        joint_torques = obs['torques']
 
-        reward = self.reward_weight * (
-            -abs((joint_id_vels[0] - joint_vels[0]) * joint_torques[0])
-            - abs((joint_id_vels[1] - joint_vels[1]) * joint_torques[1])
-            - abs((joint_id_vels[2] - joint_vels[2]) * joint_torques[2])
-        )
+        reward = -np.sum(abs((joint_id_vels - joint_vels) * joint_torques))
+
+        reward = np.clip(reward, -self.reward_clipping, self.reward_clipping)
+
         return reward
 
     def _build_Jacobian(self, th_current: np.ndarray) -> np.ndarray:
@@ -365,12 +415,14 @@ class InsertKinovaV1(gym.Env):
         Returns:
             np.ndarray: Desired joint velocities [j2, j4, j6] [deg/s]
         """
-        x_vel = self.z_insertion_speed * np.sin(np.deg2rad(self.misalignment))
-        z_vel = self.z_insertion_speed * np.cos(np.deg2rad(self.misalignment))
+        x_vel = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
+        z_vel = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
         rot_vel = 0.0
 
         cartesian_vel = np.array([x_vel, -z_vel, rot_vel])
-        J = self._build_Jacobian(q)
+
+        # J = self._build_Jacobian(q)
+        J = self.robot.compute_jacob0_3dof()
 
         Jinv = np.linalg.inv(J)
         q_vel = np.dot(Jinv, cartesian_vel)

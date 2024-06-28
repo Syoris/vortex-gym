@@ -173,8 +173,8 @@ class KinovaGen2(RobotBase):
         torque_min = np.array([act.torque_min for act in self.robot_cfg.actuators.values()])
         torque_max = np.array([act.torque_max for act in self.robot_cfg.actuators.values()])
 
-        # self.joints_angles_obs_space = spaces.Box(low=pos_min, high=pos_max, shape=(self.n_joints,), dtype=np.float32)
-        self.joints_angles_obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.n_joints,), dtype=np.float32)
+        self.joints_angles_obs_space = spaces.Box(low=-180, high=180, shape=(self.n_joints,), dtype=np.float32)
+        # self.joints_angles_obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.n_joints,), dtype=np.float32)
         self.joints_vels_obs_space = spaces.Box(low=vel_min, high=vel_max, shape=(self.n_joints,), dtype=np.float32)
         self.joints_torques_obs_space = spaces.Box(
             low=torque_min, high=torque_max, shape=(self.n_joints,), dtype=np.float32
@@ -398,6 +398,19 @@ class KinovaGen2(RobotBase):
         current_tips_rot = -q2 + q4 - q6 + 90.0 * (np.pi / 180.0)
 
         return current_tips_posx, current_tips_posz, current_tips_rot
+
+    def compute_jacob0_3dof(self):
+        """Compute the Jacobian for the 3dof robot in the world frame
+
+        Returns:
+            3x3 np.ndarray: The jacobian
+        """
+        q = np.array([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle])
+        J0 = self.robot_model.jacob0(np.deg2rad(q))
+
+        J0_3dof = J0[[0, 2, 4], :]
+
+        return J0_3dof
 
 
 class Joint:
