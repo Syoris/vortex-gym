@@ -30,7 +30,7 @@ class InsertKinovaV1(gym.Env):
         socket_x_offset=0.005,  # Offset of the socket x position [m]
         eval_mode=False,
         viewpoint=None,
-        ctrl_freq=50,
+        ctrl_freq=100,
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -89,13 +89,14 @@ class InsertKinovaV1(gym.Env):
 
         self.robot = KinovaGen2(self.vortex_env)
 
-        # Init observation and action spaces
-        self._init_spaces()
-
         # RL Variables and Hyperparameters
-        self.action = np.zeros(2)  # Last action taken by the agent
+        self.n_action = 2
+        self.action = np.zeros(self.n_action)  # Last action taken by the agent
         self.command = np.zeros(3)  # Command sent to the robot [j2, j4, j6]
         self.ik_joints_vels = np.zeros(3)  # Joint velocities computed by the IK
+
+        # Init observation and action spaces
+        self._init_spaces()
 
         self.obs = None  # observation dict from the last step, updated in `step` method
         self.obs_normalized = None  # observation dict from the last step, normalized
@@ -110,8 +111,8 @@ class InsertKinovaV1(gym.Env):
         self.socket_pose = [0, 0, 0]
 
         # RL HP
-        self.action_coeff = 0.05
-        self.reward_weight = 1
+        self.action_coeff = 0.01
+        self.reward_weight = 0.04
         self.reward_clipping = 10
 
         # Initialize robot
@@ -144,7 +145,7 @@ class InsertKinovaV1(gym.Env):
             30.0  # Maximum joint speed [deg/s] (Manually set for now, all joints set to the same speed)
         )
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.n_action,), dtype=np.float32)
 
     # --------------------------------------------------------------------------------------------
     # MARK: Gym methods
@@ -214,22 +215,24 @@ class InsertKinovaV1(gym.Env):
         # self.ik_joints_vels = [5.0, 5.0, 5.0]
 
         # Scale actions
-        # # 2 ACTIONS
-        # act_j2 = self.action_coeff * self.action[0] * self._actuator_high_bound[0]
-        # act_j6 = self.action_coeff * self.action[1] * self._actuator_high_bound[1]
+        # 2 ACTIONS
+        if self.n_action == 2:
+            act_j2 = np.rad2deg(self.action_coeff * self.action[0])  # * self._joint_max_speed
+            act_j6 = np.rad2deg(self.action_coeff * self.action[1])  # * self._joint_max_speed
 
-        # j2_vel = self.ik_joints_vels[0] - act_j2
-        # j4_vel = self.ik_joints_vels[1] + act_j6 - act_j2
-        # j6_vel = self.ik_joints_vels[2] + act_j6
+            j2_vel = self.ik_joints_vels[0] - act_j2
+            j4_vel = self.ik_joints_vels[1] + act_j6 - act_j2
+            j6_vel = self.ik_joints_vels[2] + act_j6
 
-        # 3 ACTIONS
-        act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
-        act_j4 = self.action_coeff * self.action[1] * self._joint_max_speed
-        act_j6 = self.action_coeff * self.action[2] * self._joint_max_speed
+        elif self.n_action == 3:
+            # 3 ACTIONS
+            act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
+            act_j4 = self.action_coeff * self.action[1] * self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[2] * self._joint_max_speed
 
-        j2_vel = self.ik_joints_vels[0] + act_j2
-        j4_vel = self.ik_joints_vels[1] + act_j4
-        j6_vel = self.ik_joints_vels[2] + act_j6
+            j2_vel = self.ik_joints_vels[0] + act_j2
+            j4_vel = self.ik_joints_vels[1] + act_j4
+            j6_vel = self.ik_joints_vels[2] + act_j6
 
         # Apply actions
         self.command = np.array([j2_vel, j4_vel, j6_vel])
@@ -307,7 +310,7 @@ class InsertKinovaV1(gym.Env):
         # TODO: Add noise to the observations
         ...
 
-        return obs, obs_normalized
+        return obs, obs  # TODO, change back
 
     def _get_info(self) -> dict:
         """Get additional information about the environment.
@@ -357,9 +360,9 @@ class InsertKinovaV1(gym.Env):
         joint_id_vels = obs['target_vels']
         joint_torques = obs['torques']
 
-        reward = -np.sum(abs((joint_id_vels - joint_vels) * joint_torques))
+        reward = -self.reward_weight * np.sum(abs(np.deg2rad(joint_id_vels - joint_vels) * joint_torques))
 
-        reward = np.clip(reward, -self.reward_clipping, self.reward_clipping)
+        # reward = np.clip(reward, -self.reward_clipping, self.reward_clipping) # TODO: Reward clipping
 
         return reward
 
