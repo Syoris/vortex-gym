@@ -31,6 +31,7 @@ class InsertKinovaV1(gym.Env):
         eval_mode=False,
         viewpoint=None,
         ctrl_freq=100,
+        reward_weight=1,
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -112,7 +113,7 @@ class InsertKinovaV1(gym.Env):
 
         # RL HP
         self.action_coeff = 1
-        self.reward_weight = 0.04
+        self.reward_weight = reward_weight
         self.reward_clipping = 10
 
         # Initialize robot
@@ -217,11 +218,14 @@ class InsertKinovaV1(gym.Env):
         # Scale actions
         # 2 ACTIONS
         if self.n_action == 2:
-            act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
-            act_j6 = self.action_coeff * self.action[1] * self._joint_max_speed
+            act_j2 = self.action_coeff * self.action[0] * 5  # self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[1] * 5  # self._joint_max_speed
 
+            # Sign of the speeds:
+            #   j2 and j4 are inverted -> same sign
+            #   j4 and j6 same direction, but inverted wrt j2 -> opposite sign
             j2_vel = self.ik_joints_vels[0] + act_j2
-            j4_vel = self.ik_joints_vels[1] - act_j6 - act_j2
+            j4_vel = self.ik_joints_vels[1] - act_j6 + act_j2
             j6_vel = self.ik_joints_vels[2] + act_j6
 
         elif self.n_action == 3:
@@ -336,6 +340,7 @@ class InsertKinovaV1(gym.Env):
         info_dict = {
             'action': self.action,
             'command': self.command,
+            'ctrl_cmd': self.ik_joints_vels,
             'peg_force_x': peg_force[0],
             'peg_force_y': peg_force[1],
             'peg_force_z': peg_force[2],
@@ -357,10 +362,11 @@ class InsertKinovaV1(gym.Env):
     def _compute_reward(self) -> float:
         obs = self.obs_normalized
         joint_vels = obs['velocities']
-        joint_id_vels = obs['target_vels']
+        # joint_id_vels = obs['target_vels']
+        joint_ik_vels = self.ik_joints_vels
         joint_torques = obs['torques']
 
-        reward = -self.reward_weight * np.sum(abs(np.deg2rad(joint_id_vels - joint_vels) * joint_torques))
+        reward = -self.reward_weight * np.sum(abs((joint_ik_vels - joint_vels) * joint_torques))
 
         # reward = np.clip(reward, -self.reward_clipping, self.reward_clipping) # TODO: Reward clipping
 
