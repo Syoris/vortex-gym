@@ -218,8 +218,8 @@ class InsertKinovaV1(gym.Env):
         # Scale actions
         # 2 ACTIONS
         if self.n_action == 2:
-            act_j2 = self.action_coeff * self.action[0] * 5  # self._joint_max_speed
-            act_j6 = self.action_coeff * self.action[1] * 5  # self._joint_max_speed
+            act_j2 = self.action_coeff * self.action[0]  # self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[1]  # self._joint_max_speed
 
             # Sign of the speeds:
             #   j2 and j4 are inverted -> same sign
@@ -314,7 +314,7 @@ class InsertKinovaV1(gym.Env):
         # TODO: Add noise to the observations
         ...
 
-        return obs, obs  # TODO, change back
+        return obs, obs
 
     def _get_info(self) -> dict:
         """Get additional information about the environment.
@@ -360,7 +360,7 @@ class InsertKinovaV1(gym.Env):
         return info_dict
 
     def _compute_reward(self) -> float:
-        obs = self.obs_normalized
+        obs = self.obs
         joint_vels = obs['velocities']
         # joint_id_vels = obs['target_vels']
         joint_ik_vels = self.ik_joints_vels
