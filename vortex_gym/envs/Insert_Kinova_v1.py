@@ -111,7 +111,7 @@ class InsertKinovaV1(gym.Env):
         self.socket_pose = [0, 0, 0]
 
         # RL HP
-        self.action_coeff = 0.01
+        self.action_coeff = 1
         self.reward_weight = 0.04
         self.reward_clipping = 10
 
@@ -217,8 +217,8 @@ class InsertKinovaV1(gym.Env):
         # Scale actions
         # 2 ACTIONS
         if self.n_action == 2:
-            act_j2 = self.action_coeff * self.action[0]  # * self._joint_max_speed
-            act_j6 = self.action_coeff * self.action[1]  # * self._joint_max_speed
+            act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[1] * self._joint_max_speed
 
             j2_vel = self.ik_joints_vels[0] + act_j2
             j4_vel = self.ik_joints_vels[1] - act_j6 - act_j2
