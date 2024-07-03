@@ -217,11 +217,11 @@ class InsertKinovaV1(gym.Env):
         # Scale actions
         # 2 ACTIONS
         if self.n_action == 2:
-            act_j2 = np.rad2deg(self.action_coeff * self.action[0])  # * self._joint_max_speed
-            act_j6 = np.rad2deg(self.action_coeff * self.action[1])  # * self._joint_max_speed
+            act_j2 = self.action_coeff * self.action[0]  # * self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[1]  # * self._joint_max_speed
 
-            j2_vel = self.ik_joints_vels[0] - act_j2
-            j4_vel = self.ik_joints_vels[1] + act_j6 - act_j2
+            j2_vel = self.ik_joints_vels[0] + act_j2
+            j4_vel = self.ik_joints_vels[1] - act_j6 - act_j2
             j6_vel = self.ik_joints_vels[2] + act_j6
 
         elif self.n_action == 3:
