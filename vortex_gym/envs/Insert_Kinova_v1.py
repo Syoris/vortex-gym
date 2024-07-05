@@ -260,6 +260,9 @@ class InsertKinovaV1(gym.Env):
         if self.step_count >= self.max_step_per_ep:
             self.ep_completed = True
 
+            # Check if it is a success
+            self.info['is_success'] = self._is_success()
+
         return self.obs_normalized, reward, self.ep_completed, terminated, self.info
 
     def render(self):
@@ -445,3 +448,24 @@ class InsertKinovaV1(gym.Env):
             np.ndarray: 4x4 transformation matrix
         """
         return self.vortex_env.get_input(self._scene_vx_in.socket_pose)
+
+    def _is_success(self) -> bool:
+        """Check if the task was successful.
+
+        Success is defined as the peg being inserted in the hole between:
+            - z_peg:
+            - x_peg:
+        """
+        x_range = 0.02  # 2 cm
+        x_target = 0.55
+        x_lims = [x_target - x_range, x_target + x_range]
+
+        z_range = 0.01  # 1 cm
+        z_target = 0.02
+        z_lims = [z_target - z_range, z_target + z_range]
+
+        peg_pose = self.info['peg_pose'][0]
+        peg_pose_z = peg_pose[2]
+        peg_pose_x = peg_pose[0]
+
+        return (z_lims[0] <= peg_pose_z <= z_lims[1]) and (x_lims[0] <= peg_pose_x <= x_lims[1])
