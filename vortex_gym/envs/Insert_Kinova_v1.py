@@ -128,7 +128,7 @@ class InsertKinovaV1(gym.Env):
         self.vortex_env.save_current_frame()
 
         # Compute traj
-        self.joints_vel_traj = self.robot.compute_joint_vels_traj(
+        traj_joint_angles, self.joints_vel_traj = self.robot.compute_joint_vels_traj(
             -self.z_insertion, -self.z_insertion_speed, self.max_step_per_ep
         )
 

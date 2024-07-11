@@ -436,37 +436,41 @@ class KinovaGen2(RobotBase):
 
         desired_vel = np.array([0, vz, 0])  # Desired velocity in the world frame [vx, vz, v_rot]
 
-        # Load traj if it exists
-        save_path = Path(__file__).parent / 'trajs' / f'z_insert_{dz}_{np.round(vz, 3)}_{n_steps}.npy'
-        if save_path.exists():
-            return np.load(save_path)
+        # # Load traj if it exists
+        # save_path = Path(__file__).parent / 'trajs' / f'z_insert_{dz}_{np.round(vz, 3)}_{n_steps}.npy'
+        # if save_path.exists():
+        #     return np.load(save_path)
 
-        # Compute the target pose
-        T0 = self.ee_pose
-        T1 = T0 * SE3.Tz(dz)
-        traj_poses = rtb.tools.trajectory.ctraj(T0, T1, t=n_steps)
+        # # Compute the target pose
+        # T0 = self.ee_pose
+        # T1 = T0 * SE3.Tz(dz)
+        # traj_poses = rtb.tools.trajectory.ctraj(T0, T1, t=n_steps)
 
         # Compute the joint velocities
-        vels_list = []
+        vels_list = []  # [np.zeros(3)]
+        angles_list = []  # [np.array(q0)]
 
-        print('[KinovaGen2.compute_joint_vels_traj] No saved traj found - Computing new traj')
-        for each_pose in traj_poses:
-            sol = self.robot_model.ikine_LM(each_pose, q0=np.deg2rad(q0), joint_limits=True)
-            if not sol.success:
-                raise ValueError('Inverse kineamtics failed - Target pose is unreachable')
-
-            J = self.compute_jacob0_3dof(np.rad2deg(sol.q))
+        # print('[KinovaGen2.compute_joint_vels_traj] No saved traj found - Computing new traj')
+        q = q0
+        for _ in range(n_steps):
+            # sol = self.robot_model.ikine_LM(each_pose, q0=np.deg2rad(q0), joint_limits=True)
+            # if not sol.success:
+            #     raise ValueError('Inverse kineamtics failed - Target pose is unreachable')
+            J = self.compute_jacob0_3dof(q)
 
             Jinv = np.linalg.inv(J)
             q_vel = np.dot(Jinv, desired_vel)
-
             vels_list.append(np.rad2deg(q_vel))
 
-        print(f'[KinovaGen2.compute_joint_vels_traj] Saving traj to {save_path}')
-        vels_array = np.array(vels_list)
-        np.save(save_path, vels_array)
+            q = q + np.rad2deg(q_vel) * self.vx_env.h
+            angles_list.append(q)
 
-        return vels_array
+        # print(f'[KinovaGen2.compute_joint_vels_traj] Saving traj to {save_path}')
+        vels_array = np.array(vels_list)
+        angles_array = np.array(angles_list)
+        # np.save(save_path, vels_array)
+
+        return angles_array, vels_array
 
 
 class Joint:
