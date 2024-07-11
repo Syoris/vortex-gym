@@ -1,3 +1,4 @@
+from pathlib import Path
 import time
 from gymnasium import spaces
 import numpy as np
@@ -399,18 +400,73 @@ class KinovaGen2(RobotBase):
 
         return current_tips_posx, current_tips_posz, current_tips_rot
 
-    def compute_jacob0_3dof(self):
-        """Compute the Jacobian for the 3dof robot in the world frame
+    def compute_jacob0_3dof(self, q: np.array = None):
+        """Compute the Jacobian for the 3dof robot in the world frame. If not configuration is specified, the current joint angles are used.
+
+        q: np.array: The joint angles in degrees
 
         Returns:
             3x3 np.ndarray: The jacobian
         """
-        q = np.array([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle])
+        if q is None:
+            q = np.array([self.joints.j2.angle, self.joints.j4.angle, self.joints.j6.angle])
+
         J0 = self.robot_model.jacob0(np.deg2rad(q))
 
         J0_3dof = J0[[0, 2, 4], :]
 
         return J0_3dof
+
+    def compute_joint_vels_traj(self, dz, vz, n_steps):
+        """Compute the trajectory for the 3dof robot
+
+        Args:
+            dz (float): Movement in z direction
+            vz (float): Desired velocity in z direction
+            n_steps (int): The number of steps
+
+        Returns:
+            np.array: The trajectory
+        """
+        print('[KinovaGen2.compute_joint_vels_traj] Computing joint velocities trajectory')
+        # Get the current joint angles
+        q0 = self.joints.angles
+        if self.n_joints == 3:
+            q0 = [q0[1], q0[3], q0[5]]
+
+        desired_vel = np.array([0, vz, 0])  # Desired velocity in the world frame [vx, vz, v_rot]
+
+        # Load traj if it exists
+        save_path = Path(__file__).parent / 'trajs' / f'z_insert_{dz}_{np.round(vz, 3)}_{n_steps}.npy'
+        if save_path.exists():
+            return np.load(save_path)
+
+        # Compute the target pose
+        T0 = self.ee_pose
+        T1 = T0 * SE3.Tz(dz)
+        traj_poses = rtb.tools.trajectory.ctraj(T0, T1, t=n_steps)
+
+        # Compute the joint velocities
+        vels_list = []
+
+        print('[KinovaGen2.compute_joint_vels_traj] No saved traj found - Computing new traj')
+        for each_pose in traj_poses:
+            sol = self.robot_model.ikine_LM(each_pose, q0=np.deg2rad(q0), joint_limits=True)
+            if not sol.success:
+                raise ValueError('Inverse kineamtics failed - Target pose is unreachable')
+
+            J = self.compute_jacob0_3dof(np.rad2deg(sol.q))
+
+            Jinv = np.linalg.inv(J)
+            q_vel = np.dot(Jinv, desired_vel)
+
+            vels_list.append(np.rad2deg(q_vel))
+
+        print(f'[KinovaGen2.compute_joint_vels_traj] Saving traj to {save_path}')
+        vels_array = np.array(vels_list)
+        np.save(save_path, vels_array)
+
+        return vels_array
 
 
 class Joint:
