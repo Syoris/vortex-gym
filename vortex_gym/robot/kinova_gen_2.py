@@ -91,7 +91,7 @@ KI = 0
 
 
 class KinovaGen2(RobotBase):
-    def __init__(self, vx_env: VortexEnv, set_joints_limits: bool = False, set_forces_limits: bool = False):
+    def __init__(self, vx_env: VortexEnv, set_joints_limits: bool = False, set_forces_limits: bool = True):
         print('[KinovaGen2.__init__] Initializing KinovaGen2 Robot')
         init_start_time = time.time()
 

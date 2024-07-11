@@ -32,6 +32,7 @@ class InsertKinovaV1(gym.Env):
         viewpoint=None,
         ctrl_freq=100,
         reward_weight=1,
+        action_coeff=1,
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -91,7 +92,7 @@ class InsertKinovaV1(gym.Env):
         self.robot = KinovaGen2(self.vortex_env)
 
         # RL Variables and Hyperparameters
-        self.n_action = 2
+        self.n_action = 3
         self.action = np.zeros(self.n_action)  # Last action taken by the agent
         self.command = np.zeros(3)  # Command sent to the robot [j2, j4, j6]
         self.ik_joints_vels = np.zeros(3)  # Joint velocities computed by the IK
@@ -112,12 +113,14 @@ class InsertKinovaV1(gym.Env):
         self.socket_pose = [0, 0, 0]
 
         # RL HP
-        self.action_coeff = 1
+        self.action_coeff = action_coeff
         self.reward_weight = reward_weight
         self.reward_clipping = 10
 
         # Initialize robot
         self.robot.go_home()
+        self.robot.set_joints_vels(self.command)
+        self.vortex_env.step()
         self.vortex_env.save_current_frame()
 
         self.reset()
@@ -230,9 +233,9 @@ class InsertKinovaV1(gym.Env):
 
         elif self.n_action == 3:
             # 3 ACTIONS
-            act_j2 = self.action_coeff * self.action[0] * self._joint_max_speed
-            act_j4 = self.action_coeff * self.action[1] * self._joint_max_speed
-            act_j6 = self.action_coeff * self.action[2] * self._joint_max_speed
+            act_j2 = self.action_coeff * self.action[0]  # * self._joint_max_speed
+            act_j4 = self.action_coeff * self.action[1]  # * self._joint_max_speed
+            act_j6 = self.action_coeff * self.action[2]  # * self._joint_max_speed
 
             j2_vel = self.ik_joints_vels[0] + act_j2
             j4_vel = self.ik_joints_vels[1] + act_j4
@@ -460,9 +463,10 @@ class InsertKinovaV1(gym.Env):
         x_target = 0.55
         x_lims = [x_target - x_range, x_target + x_range]
 
-        z_range = 0.01  # 1 cm
-        z_target = 0.02
-        z_lims = [z_target - z_range, z_target + z_range]
+        # z_range = 0.01  # 1 cm
+        # z_target = 0.02
+        # z_socket = 0.08 # Top of the socket
+        z_lims = [0, 0.06]  # Sucess if 2cm in the hole
 
         peg_pose = self.info['peg_pose'][0]
         peg_pose_z = peg_pose[2]
