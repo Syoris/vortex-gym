@@ -3,7 +3,6 @@ from gymnasium import spaces
 import numpy as np
 
 from pyvortex.vortex_env import VortexEnv
-from spatialmath import SE3
 from vortex_gym.robot.kinova_gen_2 import KinovaGen2, KinovaVxIn, KinovaVxOut
 from pyvortex.vortex_classes import VortexInterface
 
@@ -92,12 +91,13 @@ class InsertKinovaV1(gym.Env):
 
         self.robot = KinovaGen2(self.vortex_env)
         self._J = None  # Current Jacobian matrix
+        self._J_inv = None  # Current Inverse Jacobian matrix
 
         # RL Variables and Hyperparameters
         self.n_action = 3
         self.action = np.zeros(self.n_action)  # Last action taken by the agent
-        self.command = np.zeros(3)  # Command sent to the robot [j2, j4, j6]
-        self.ik_joints_vels = np.zeros(3)  # Joint velocities computed by the IK
+        self.joint_cmd = np.zeros(3)  # Command sent to the robot [j2, j4, j6]
+        self.joint_vels_ideal = np.zeros(3)  # Ideal Joint velocities, from traj or controller
         self.ee_vel_ctrl = np.zeros(3)  # Desired ee vel in task space, output of the controller
         self.ee_vel_aug = np.zeros(3)  # Desired ee vel in task space, augmented
 
@@ -123,7 +123,7 @@ class InsertKinovaV1(gym.Env):
 
         # Initialize robot
         self.robot.go_home()
-        self.robot.set_joints_vels(self.command)
+        self.robot.set_joints_vels(self.joint_cmd)
         self.vortex_env.step()
         self.vortex_env.save_current_frame()
 
@@ -175,7 +175,9 @@ class InsertKinovaV1(gym.Env):
 
         # Get observation and info
         self.obs, self.obs_normalized = self._get_obs()
-        self.ik_joints_vels = self._get_ik_vels(self.obs['joint_angles'], desired_vel=np.zeros(3))
+        self._update_jacobian()
+        self.joint_vels_ideal = self._get_ik_vels(desired_vel=np.zeros(3))
+
         info = self._get_info()
 
         if (self.episode_count > self.randomization_start) or self.eval_mode:
@@ -207,7 +209,7 @@ class InsertKinovaV1(gym.Env):
         - torque
 
         The info returned is the other information that might be useful for analysis, but not for learning:
-        - command
+        - joint_cmd
         - plug force
         - plug torque
 
@@ -222,21 +224,26 @@ class InsertKinovaV1(gym.Env):
             info (dict): Additional information about the step
         """
         terminated = False
+        self.action = action
+        self._update_jacobian()
 
+        # Controller output
         x_vel_ctrl = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
         z_vel_ctrl = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
         rot_vel_ctrl = 0.0
         self.ee_vel_ctrl = np.array([x_vel_ctrl, -z_vel_ctrl, rot_vel_ctrl])
 
-        self.action = action
-
+        # Augmented action
         self.ee_vel_aug = self.ee_vel_ctrl + self.action_coeff * self.action
+        joint_vels_aug = self._get_ik_vels(desired_vel=self.ee_vel_aug)
 
-        self.ik_joints_vels = self._get_ik_vels(self.obs['joint_angles'], desired_vel=self.ee_vel_aug)
+        # Expected joint velocities
+        self.joint_vels_ideal = self._get_ik_vels(desired_vel=self.ee_vel_ctrl)  # From ctrl
+        # self.joint_vels_ideal = self.joints_vel_traj[self.step_count]  # From traj
 
         # Apply actions
-        self.command = np.array([self.ik_joints_vels[0], self.ik_joints_vels[1], self.ik_joints_vels[2]])
-        self.robot.set_joints_vels(self.command)
+        self.joint_cmd = np.array([joint_vels_aug[0], joint_vels_aug[1], joint_vels_aug[2]])
+        self.robot.set_joints_vels(self.joint_cmd)
 
         # Step the simulation
         for _ in range(self._n_sim_steps):
@@ -305,19 +312,20 @@ class InsertKinovaV1(gym.Env):
             'joint_torques': joint_torques,
             'joint_target_vels': joint_vels_cmd,
         }
-        # Normalize the observations
 
-        vels_normalized = joint_vels / self._joint_max_speed
-        vels_cmds_normalized = joint_vels_cmd / self._joint_max_speed
-        torques_normalized = joint_torques / self._joint_max_torque
-        angles_normalized = joint_angles / 180.0
+        # # Normalize the observations
 
-        obs_normalized = {
-            'joint_angles': angles_normalized,
-            'joint_vels': vels_normalized,
-            'joint_torques': torques_normalized,
-            'joint_target_vels': vels_cmds_normalized,
-        }
+        # vels_normalized = joint_vels / self._joint_max_speed
+        # vels_cmds_normalized = joint_vels_cmd / self._joint_max_speed
+        # torques_normalized = joint_torques / self._joint_max_torque
+        # angles_normalized = joint_angles / 180.0
+
+        # obs_normalized = {
+        #     'joint_angles': angles_normalized,
+        #     'joint_vels': vels_normalized,
+        #     'joint_torques': torques_normalized,
+        #     'joint_target_vels': vels_cmds_normalized,
+        # }
 
         # TODO: Add noise to the observations
         ...
@@ -328,12 +336,12 @@ class InsertKinovaV1(gym.Env):
         """Get additional information about the environment.
 
         - action (np.array): The action taken by the agent [j2_aug, j6_aug]
-        - command (np.array): The command sent to the robot [j2, j4, j6]
+        - joint_cmd (np.array): The joint_cmd sent to the robot [j2, j4, j6]
         - peg_force (np.array): The force applied to the peg [fx, fy, fz]
         - peg_torque (np.array): The torque applied to the peg [tx, ty, tz]
         - peg_pose ((np.array, np.array)): The pose of the tool ([x, y, z], [roll, pitch, yaw])
         - ee_pose ((np.array, np.array)): The pose of the end-effector ([x, y, z], [roll, pitch, yaw])
-        # - insertion_depth (float): The depth of the peg in the hole
+        //- insertion_depth (float): The depth of the peg in the hole
         - misaligment (float): Misaligment angle
 
         Returns:
@@ -348,8 +356,8 @@ class InsertKinovaV1(gym.Env):
 
         info_dict = {
             'action': self.action,
-            'joint_cmd': self.command,  # Command sent to the robot [j2, j4, j6]
-            'ik_joint_vels': self.joints_vel_traj[self.step_count],  # Expected joint velocities from IK trajectory
+            'joint_cmd': self.joint_cmd,  # Command sent to the robot [j2, j4, j6]
+            'joint_vels_ideal': self.joint_vels_ideal,  # Expected joint velocities from IK trajectory or controller
             'ee_vel_ctrl': self.ee_vel_ctrl,  # Desired ee vel in task space, output of the controller
             'ee_vel_aug': self.ee_vel_aug,  # Desired ee vel in task space, augmented
             'ee_vel': ee_vel,  # End-effector velocity [m/s, m/s, rad/s]
@@ -374,74 +382,31 @@ class InsertKinovaV1(gym.Env):
     def _compute_reward(self) -> float:
         obs = self.obs
         joint_vels = obs['joint_vels']
-        # joint_id_vels = obs['target_vels']
-        joint_ik_vels = self.joints_vel_traj[self.step_count]
+        joint_vels_ideal = self.joint_vels_ideal
         joint_torques = obs['joint_torques']
 
-        reward = -self.reward_weight * np.sum(abs((joint_ik_vels - joint_vels) * joint_torques))
+        reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
 
         # reward = np.clip(reward, -self.reward_clipping, self.reward_clipping) # TODO: Reward clipping
 
         return reward
 
-    def _build_Jacobian(self, th_current: np.ndarray) -> np.ndarray:
-        """Build the manipulator's Jacobian matrix.
+    def _update_jacobian(self):
+        """Update the Jacobian matrix of the robot and compute the inverse."""
+        self._J = self.robot.compute_jacob0_3dof()
+
+        self._J_inv = np.linalg.inv(self._J)
+
+    def _get_ik_vels(self, desired_vel: np.ndarray = None) -> np.ndarray:
+        """Compute the joint velocities so the end-effector moves with the desired velocity.
 
         Args:
-            th_current (np.ndarray): Current joint positions [j2, j4, j6] [deg]
-
-        Returns:
-            np.ndarray: Jacobian matrix
-        """
-        q2 = np.deg2rad(th_current[0])
-        q4 = np.deg2rad(th_current[1])
-        q6 = np.deg2rad(th_current[2])
-
-        a_x = (
-            -self.robot.L34 * np.cos(-q2)
-            - self.robot.L56 * np.cos(-q2 + q4)
-            - self.robot.L78 * np.cos(-q2 + q4 - q6)
-            - self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        b_x = (
-            self.robot.L56 * np.cos(-q2 + q4)
-            + self.robot.L78 * np.cos(-q2 + q4 - q6)
-            + self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        c_x = -self.robot.L78 * np.cos(-q2 + q4 - q6) - self.robot.Ltip * np.cos(-q2 + q4 - q6 + np.pi / 2.0)
-
-        a_z = (
-            self.robot.L34 * np.sin(-q2)
-            + self.robot.L56 * np.sin(-q2 + q4)
-            + self.robot.L78 * np.sin(-q2 + q4 - q6)
-            + self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        b_z = (
-            -self.robot.L56 * np.sin(-q2 + q4)
-            - self.robot.L78 * np.sin(-q2 + q4 - q6)
-            - self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-        )
-        c_z = self.robot.L78 * np.sin(-q2 + q4 - q6) + self.robot.Ltip * np.sin(-q2 + q4 - q6 + np.pi / 2.0)
-
-        J = [[a_x, b_x, c_x], [a_z, b_z, c_z], [-1.0, 1.0, -1.0]]
-
-        return J
-
-    def _get_ik_vels(self, q: np.ndarray, desired_vel: np.ndarray = None) -> np.ndarray:
-        """Compute the joint velocities to go straight down with a misalignment.
-
-        Args:
-            q (np.ndarray): Current joint positions [j2, j4, j6] [deg]
             desired_vel (np.ndarray): Desired velocity [x, z, rot] [m/s, m/s, rad/s]
 
         Returns:
             np.ndarray: Desired joint velocities [j2, j4, j6] [deg/s]
         """
-        # J = self._build_Jacobian(q)
-        self._J = self.robot.compute_jacob0_3dof()
-
-        Jinv = np.linalg.inv(self._J)
-        q_vel = np.dot(Jinv, desired_vel)
+        q_vel = self._J_inv @ desired_vel
 
         return np.rad2deg(q_vel)
 
