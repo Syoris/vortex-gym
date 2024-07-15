@@ -143,7 +143,7 @@ class InsertKinovaV1(gym.Env):
                 'joint_angles': self.robot.joints_angles_obs_space,
                 'joint_vels': self.robot.joints_vels_obs_space,
                 'joint_torques': self.robot.joints_torques_obs_space,
-                'joint_target_vels': self.robot.joints_vels_obs_space,
+                'joint_vels_ideal': self.robot.joints_vels_obs_space,
             }
         )
 
@@ -291,7 +291,7 @@ class InsertKinovaV1(gym.Env):
         - joint_angles (np.array): Joint angles [j2, j4, j6] [deg]
         - joint_vels (np.array): Joint velocities [j2, j4, j6] [deg/s]
         - joint_torques (np.array): Joint torques [j2, j4, j6] [Nm]
-        - joint_target_vels (np.array): Target joint velocities [j2, j4, j6] [deg/s]
+        - joint_vels_ideal (np.array): Target joint velocities [j2, j4, j6] [deg/s]
         """
         joints_states = self.robot.joints
 
@@ -306,11 +306,13 @@ class InsertKinovaV1(gym.Env):
             [joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]], dtype=np.float32
         )
 
+        joint_vels_ideal = self.joint_vels_ideal
+
         obs = {
             'joint_angles': joint_angles,
             'joint_vels': joint_vels,
             'joint_torques': joint_torques,
-            'joint_target_vels': joint_vels_cmd,
+            'joint_vels_ideal': joint_vels_ideal,  # joint_vels_cmd
         }
 
         # # Normalize the observations
@@ -324,7 +326,7 @@ class InsertKinovaV1(gym.Env):
         #     'joint_angles': angles_normalized,
         #     'joint_vels': vels_normalized,
         #     'joint_torques': torques_normalized,
-        #     'joint_target_vels': vels_cmds_normalized,
+        #     'joint_vels_ideal': vels_cmds_normalized,
         # }
 
         # TODO: Add noise to the observations
