@@ -140,7 +140,7 @@ class InsertKinovaV1(gym.Env):
         # Observation space
         self.observation_space = spaces.Dict(
             {
-                'joint_angles': self.robot.joints_angles_obs_space,
+                # 'joint_angles': self.robot.joints_angles_obs_space,
                 'joint_vels': self.robot.joints_vels_obs_space,
                 'joint_torques': self.robot.joints_torques_obs_space,
                 'joint_vels_ideal': self.robot.joints_vels_obs_space,
@@ -238,8 +238,8 @@ class InsertKinovaV1(gym.Env):
         joint_vels_aug = self._get_ik_vels(desired_vel=self.ee_vel_aug)
 
         # Expected joint velocities
-        self.joint_vels_ideal = self._get_ik_vels(desired_vel=self.ee_vel_ctrl)  # From ctrl
-        # self.joint_vels_ideal = self.joints_vel_traj[self.step_count]  # From traj
+        # self.joint_vels_ideal = self._get_ik_vels(desired_vel=self.ee_vel_ctrl)  # From ctrl
+        self.joint_vels_ideal = self.joints_vel_traj[self.step_count]  # From traj
 
         # Apply actions
         self.joint_cmd = np.array([joint_vels_aug[0], joint_vels_aug[1], joint_vels_aug[2]])
@@ -306,10 +306,10 @@ class InsertKinovaV1(gym.Env):
             [joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]], dtype=np.float32
         )
 
-        joint_vels_ideal = self.joint_vels_ideal
+        joint_vels_ideal = self.joint_vels_ideal.astype(np.float32)
 
         obs = {
-            'joint_angles': joint_angles,
+            # 'joint_angles': joint_angles,
             'joint_vels': joint_vels,
             'joint_torques': joint_torques,
             'joint_vels_ideal': joint_vels_ideal,  # joint_vels_cmd
