@@ -255,16 +255,27 @@ class InsertKinovaV1(gym.Env):
         # Info
         self.info = self._get_info()  # plug force and torque
 
-        # Reward
-        reward = self._compute_reward()
+        # --- Reward ---
+        # DENSE
+        # reward = self._compute_reward()
+
+        # SPARSE
+        is_success = self._is_success()
+        if is_success:
+            reward = 1
+            self.info['is_success'] = True
+            self.ep_completed = True
+        else:
+            reward = 0
 
         # Done flag
         self.step_count += 1
         if self.step_count >= self.max_step_per_ep:
-            self.ep_completed = True
+            # self.ep_completed = True
+            terminated = True
 
             # Check if it is a success
-            self.info['is_success'] = self._is_success()
+            # self.info['is_success'] = self._is_success()
 
         return self.obs_normalized, reward, self.ep_completed, terminated, self.info
 
@@ -434,7 +445,7 @@ class InsertKinovaV1(gym.Env):
         # z_range = 0.01  # 1 cm
         # z_target = 0.02
         # z_socket = 0.08 # Top of the socket
-        z_lims = [0, 0.06]  # Sucess if 2cm in the hole
+        z_lims = [0, 0.04]  # Sucess if 2cm in the hole
 
         peg_pose = self.info['peg_pose'][0]
         peg_pose_z = peg_pose[2]
