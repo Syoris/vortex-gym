@@ -32,7 +32,7 @@ class InsertKinovaV1(gym.Env):
         viewpoint=None,
         ctrl_freq=100,
         reward_weight=1,
-        action_coeff=1,
+        action_coeff=[1, 1, 1],
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -71,14 +71,23 @@ class InsertKinovaV1(gym.Env):
         assert render_mode is None or render_mode in self.metadata['render_modes']
         self.render_mode = render_mode
 
-        assert viewpoint is None or viewpoint in [
-            'Global',
-            'Perspective',
-        ], 'Invalid viewpoint. Use "Global" or "Perspective"'
-        if viewpoint is None:
-            viewpoints = ['Perspective']
-        else:
-            viewpoints = [viewpoint]
+        # Set viewpoint
+        if isinstance(viewpoint, str):
+            assert viewpoint is None or viewpoint in [
+                'Global',
+                'Perspective',
+            ], 'Invalid viewpoint. Use "Global" or "Perspective"'
+            if viewpoint is None:
+                viewpoints = ['Perspective']
+            else:
+                viewpoints = [viewpoint]
+        elif isinstance(viewpoint, list):
+            for each_viewpoint in viewpoint:
+                assert each_viewpoint is None or each_viewpoint in [
+                    'Global',
+                    'Perspective',
+                ], f'Invalid viewpoint [{each_viewpoint}]. Use "Global" or "Perspective"'
+            viewpoints = viewpoint
 
         self.vortex_env = VortexEnv(
             assets_dir=ASSETS_DIR,
@@ -117,7 +126,7 @@ class InsertKinovaV1(gym.Env):
         self.socket_pose = [0, 0, 0]
 
         # RL HP
-        self.action_coeff = action_coeff
+        self.action_coeff = np.array(action_coeff)
         self.reward_weight = reward_weight
         self.reward_clipping = 10
 
@@ -266,6 +275,7 @@ class InsertKinovaV1(gym.Env):
             self.info['is_success'] = True
             self.ep_completed = True
         else:
+            self.info['is_success'] = False
             reward = 0
 
         # Done flag
@@ -323,7 +333,7 @@ class InsertKinovaV1(gym.Env):
             # 'joint_angles': joint_angles,
             'joint_vels': joint_vels,
             'joint_torques': joint_torques,
-            'joint_vels_ideal': joint_vels_ideal,  # joint_vels_cmd
+            'joint_vels_ideal': joint_vels_cmd,  # joint_vels_ideal
         }
 
         # # Normalize the observations

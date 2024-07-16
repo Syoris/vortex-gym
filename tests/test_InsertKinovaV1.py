@@ -208,3 +208,128 @@ class TestInsertKinovaV1:
         - ...
         """
         ...
+
+    def test_ee_z_action(self):
+        """To test the z action, the peg should not move"""
+        env = gym.make(
+            'InsertKinova-v1', render_mode='human', socket_x_offset=0.0, viewpoint='Perspective', eval_mode=True
+        )
+        # check_env(env)
+        observation, info = env.reset()
+
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+        # action = np.zeros(3)
+        action = np.array([0.0, 0.028, 0.0])
+
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                end_peg_pose_t, end_peg_pose_rpy = info['peg_pose']
+
+                assert np.isclose(start_peg_pose_t[0], end_peg_pose_t[0], atol=0.001)
+                assert np.isclose(start_peg_pose_t[1], end_peg_pose_t[1], atol=0.001)
+                assert np.isclose(start_peg_pose_t[2], end_peg_pose_t[2], atol=0.001)
+
+                from spatialmath.base import rpy2r
+
+                R_start = rpy2r(start_peg_pose_rpy, order='xyz', unit='deg')
+                R_end = rpy2r(end_peg_pose_rpy, order='xyz', unit='deg')
+                assert np.allclose(R_start, R_end, atol=0.001)
+
+                observation, info = env.reset()
+
+        env.close()
+
+    def test_ee_z_action_2(self):
+        """To test the z action, the peg should move up"""
+        env = gym.make(
+            'InsertKinova-v1',
+            render_mode='human',
+            socket_x_offset=0.0,
+            viewpoint=['Perspective', 'Global'],
+            eval_mode=True,
+        )
+        # check_env(env)
+        observation, info = env.reset()
+
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+        # action = np.zeros(3)
+        action = np.array([0.0, 0.038, 0.0])
+
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()
+
+    def test_ee_x_action_(self):
+        """To test the x action, the peg should move up"""
+        X_SPEED = 0.1
+        env = gym.make(
+            'InsertKinova-v1',
+            render_mode='human',
+            socket_x_offset=0.0,
+            viewpoint=['Perspective', 'Global'],
+            eval_mode=True,
+        )
+        # check_env(env)
+        observation, info = env.reset()
+
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+
+        # Move left
+        action = np.array([X_SPEED, 0.028, 0.0])  # Only move left
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        # Move right
+        observation, info = env.reset()
+        action = np.array([-X_SPEED, 0.028, 0.0])  # Only move right
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()
+
+    def test_ee_rot_action_(self):
+        """To test the rot action"""
+        ROT_SPEED = 0.1
+
+        env = gym.make(
+            'InsertKinova-v1',
+            render_mode='human',
+            socket_x_offset=0.0,
+            viewpoint=['Perspective', 'Global'],
+            eval_mode=True,
+        )
+        # check_env(env)
+        observation, info = env.reset()
+
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+
+        # Move ccw
+        action = np.array([0.0, 0.028, ROT_SPEED])  # Move ccw
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        # Move clockwise
+        observation, info = env.reset()
+        action = np.array([0.0, 0.028, -ROT_SPEED])  # ve clockwise
+        for _ in range(1000):
+            observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()
