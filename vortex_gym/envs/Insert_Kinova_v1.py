@@ -24,7 +24,8 @@ class InsertKinovaV1(gym.Env):
         render_mode=None,
         sim_time_step=0.01,
         insertion_time=2.5,
-        z_insertion=0.07,
+        max_epoch_time=3,  # Maximum time of the episode [sec]
+        z_insertion=0.07,  # dz of the peg insertion [m]
         speed_misaligment_range=(0.0, 0.0),
         socket_x_range=(0.55, 0.55),  # Range of the socket x position [m] (0.529, 0.529)
         socket_x_offset=0.005,  # Offset of the socket x position [m]
@@ -40,6 +41,7 @@ class InsertKinovaV1(gym.Env):
         self.ctrl_freq = ctrl_freq  # Control frequency [Hz]
         self._n_sim_steps = int((1 / self.sim_time_step) / self.ctrl_freq)  # Number of steps per control frequency
 
+        self.max_epoch_time = max_epoch_time  # Maximum time of the episode [sec]
         self.insertion_time = insertion_time  # Time to insert the peg in the hole [sec]
         self.z_insertion = z_insertion  # Depth of the peg insertion [m]
         self.z_insertion_speed = self.z_insertion / self.insertion_time  # Speed of the peg insertion [m/s]
@@ -122,7 +124,7 @@ class InsertKinovaV1(gym.Env):
 
         self.step_count = 0  # Number of steps taken in the current episode
         self.episode_count = 0  # Number of episodes taken in the current training session
-        self.max_step_per_ep = int(insertion_time * self.ctrl_freq)  # Maximum number of steps per episode
+        self.max_step_per_ep = int(self.max_epoch_time * self.ctrl_freq)  # Maximum number of steps per episode
 
         # Scene Parameters
         self.socket_pose = [0, 0, 0]
@@ -239,10 +241,11 @@ class InsertKinovaV1(gym.Env):
         self._update_jacobian()
 
         # Controller output
-        x_vel_ctrl = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
-        z_vel_ctrl = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
-        rot_vel_ctrl = 0.0
-        self.ee_vel_ctrl = np.array([x_vel_ctrl, -z_vel_ctrl, rot_vel_ctrl])
+        # x_vel_ctrl = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
+        # z_vel_ctrl = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
+        # rot_vel_ctrl = 0.0
+        # self.ee_vel_ctrl = np.array([x_vel_ctrl, -z_vel_ctrl, rot_vel_ctrl])
+        self.ee_vel_ctrl = np.array([0, 0, 0])
 
         # Augmented action
         self.ee_vel_aug = self.ee_vel_ctrl + self.action_coeff * self.action
@@ -280,14 +283,21 @@ class InsertKinovaV1(gym.Env):
         #     self.info['is_success'] = False
         #     reward = 0
 
+        # --- Success ---
+        success = self._is_success()
+        if success:
+            reward += 10
+            self.ep_completed = True
+            self.info['is_success'] = success
+
         # Done flag
         self.step_count += 1
         if self.step_count >= self.max_step_per_ep:
-            self.ep_completed = True
-            # terminated = True
+            # self.ep_completed = True
+            terminated = True
 
             # Check if it is a success
-            self.info['is_success'] = self._is_success()
+            self.info['is_success'] = success
 
         return self.obs_normalized, reward, self.ep_completed, terminated, self.info
 
@@ -410,18 +420,27 @@ class InsertKinovaV1(gym.Env):
         joint_vels_ideal = self.joint_vels_ideal
         joint_torques = obs['joint_torques']
 
-        # # Force-based reward
+        # # --- Force-based reward ---
         # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
 
-        # Distance based
-        peg_z_start = 0.09037613998260946
-        exp_dz = self.z_insertion_speed * self.step_count * self.sim_time_step * self._n_sim_steps
-        # z_goal = peg_z_start - exp_dz
+        # # --- z-dist, variable ---
+        # peg_z_start = 0.09037613998260946
+        # exp_dz = self.z_insertion_speed * self.step_count * self.sim_time_step * self._n_sim_steps
+        # # z_goal = peg_z_start - exp_dz
 
-        peg_pose_z = self.info['peg_pose_z']
-        k_peg_dz = peg_z_start - peg_pose_z
+        # peg_pose_z = self.info['peg_pose_z']
+        # k_peg_dz = peg_z_start - peg_pose_z
 
-        reward = -(abs(exp_dz - k_peg_dz))
+        # reward = -(abs(exp_dz - k_peg_dz))
+
+        # --- 2-norm ---
+        z_goal = 0.02
+        x_goal = 0.55
+        goal_array = np.array([x_goal, z_goal])
+        peg_pose = self.info['peg_pose'][0]
+        peg_pose_array = np.array([peg_pose[0], peg_pose[2]])
+
+        reward = -np.linalg.norm(goal_array - peg_pose_array)
 
         return reward
 
@@ -466,7 +485,7 @@ class InsertKinovaV1(gym.Env):
         # z_range = 0.01  # 1 cm
         # z_target = 0.02
         # z_socket = 0.08 # Top of the socket
-        z_lims = [0, 0.04]  # Sucess if 2cm in the hole
+        z_lims = [0.01, 0.03]
 
         peg_pose = self.info['peg_pose'][0]
         peg_pose_z = peg_pose[2]
