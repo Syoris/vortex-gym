@@ -30,7 +30,7 @@ class InsertKinovaV1(gym.Env):
         socket_x_offset=0.005,  # Offset of the socket x position [m]
         eval_mode=False,
         viewpoint=None,
-        ctrl_freq=100,
+        ctrl_freq=50,
         reward_weight=1,
         action_coeff=[1, 1, 1],
     ):
@@ -72,15 +72,17 @@ class InsertKinovaV1(gym.Env):
         self.render_mode = render_mode
 
         # Set viewpoint
-        if isinstance(viewpoint, str):
+        if viewpoint is None:
+            viewpoints = ['Perspective']
+
+        elif isinstance(viewpoint, str):
             assert viewpoint is None or viewpoint in [
                 'Global',
                 'Perspective',
             ], 'Invalid viewpoint. Use "Global" or "Perspective"'
-            if viewpoint is None:
-                viewpoints = ['Perspective']
-            else:
-                viewpoints = [viewpoint]
+
+            viewpoints = [viewpoint]
+
         elif isinstance(viewpoint, list):
             for each_viewpoint in viewpoint:
                 assert each_viewpoint is None or each_viewpoint in [
@@ -266,26 +268,26 @@ class InsertKinovaV1(gym.Env):
 
         # --- Reward ---
         # DENSE
-        # reward = self._compute_reward()
+        reward = self._compute_reward()
 
-        # SPARSE
-        is_success = self._is_success()
-        if is_success:
-            reward = 1
-            self.info['is_success'] = True
-            self.ep_completed = True
-        else:
-            self.info['is_success'] = False
-            reward = 0
+        # # SPARSE
+        # is_success = self._is_success()
+        # if is_success:
+        #     reward = 1
+        #     self.info['is_success'] = True
+        #     self.ep_completed = True
+        # else:
+        #     self.info['is_success'] = False
+        #     reward = 0
 
         # Done flag
         self.step_count += 1
         if self.step_count >= self.max_step_per_ep:
-            # self.ep_completed = True
-            terminated = True
+            self.ep_completed = True
+            # terminated = True
 
             # Check if it is a success
-            # self.info['is_success'] = self._is_success()
+            self.info['is_success'] = self._is_success()
 
         return self.obs_normalized, reward, self.ep_completed, terminated, self.info
 
@@ -408,9 +410,18 @@ class InsertKinovaV1(gym.Env):
         joint_vels_ideal = self.joint_vels_ideal
         joint_torques = obs['joint_torques']
 
-        reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
+        # # Force-based reward
+        # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
 
-        # reward = np.clip(reward, -self.reward_clipping, self.reward_clipping) # TODO: Reward clipping
+        # Distance based
+        peg_z_start = 0.09037613998260946
+        exp_dz = self.z_insertion_speed * self.step_count * self.sim_time_step * self._n_sim_steps
+        # z_goal = peg_z_start - exp_dz
+
+        peg_pose_z = self.info['peg_pose_z']
+        k_peg_dz = peg_z_start - peg_pose_z
+
+        reward = -(abs(exp_dz - k_peg_dz))
 
         return reward
 
