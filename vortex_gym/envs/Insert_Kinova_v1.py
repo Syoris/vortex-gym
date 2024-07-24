@@ -24,7 +24,7 @@ class InsertKinovaV1(gym.Env):
         render_mode=None,
         sim_time_step=0.01,
         insertion_time=2.5,
-        max_epoch_time=3,  # Maximum time of the episode [sec]
+        max_epoch_time=5,  # Maximum time of the episode [sec]
         z_insertion=0.07,  # dz of the peg insertion [m]
         speed_misaligment_range=(0.0, 0.0),
         socket_x_range=(0.55, 0.55),  # Range of the socket x position [m] (0.529, 0.529)
@@ -241,11 +241,11 @@ class InsertKinovaV1(gym.Env):
         self._update_jacobian()
 
         # Controller output
-        # x_vel_ctrl = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
-        # z_vel_ctrl = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
-        # rot_vel_ctrl = 0.0
-        # self.ee_vel_ctrl = np.array([x_vel_ctrl, -z_vel_ctrl, rot_vel_ctrl])
-        self.ee_vel_ctrl = np.array([0, 0, 0])
+        x_vel_ctrl = self.z_insertion_speed * np.sin(np.deg2rad(self.speed_misalignment))
+        z_vel_ctrl = self.z_insertion_speed * np.cos(np.deg2rad(self.speed_misalignment))
+        rot_vel_ctrl = 0.0
+        self.ee_vel_ctrl = np.array([x_vel_ctrl, -z_vel_ctrl, rot_vel_ctrl])
+        # self.ee_vel_ctrl = np.array([0, 0, 0])
 
         # Augmented action
         self.ee_vel_aug = self.ee_vel_ctrl + self.action_coeff * self.action
@@ -311,7 +311,7 @@ class InsertKinovaV1(gym.Env):
         else:
             active = False
 
-        self.vortex_env.render(active=active)
+        self.vortex_env.render(active=active, real_time=False)
 
     def close(self): ...
 
@@ -337,9 +337,9 @@ class InsertKinovaV1(gym.Env):
         )
         joint_vels_cmd = np.array(
             [joints_states.vels_cmds[1], joints_states.vels_cmds[3], joints_states.vels_cmds[5]], dtype=np.float32
-        )
+        )  # Command sent to the robot
 
-        joint_vels_ideal = self.joint_vels_ideal.astype(np.float32)
+        joint_vels_ideal = self.joint_vels_ideal.astype(np.float32)  # From IK trajectory
 
         obs = {
             # 'joint_angles': joint_angles,
@@ -379,6 +379,9 @@ class InsertKinovaV1(gym.Env):
         //- insertion_depth (float): The depth of the peg in the hole
         - misaligment (float): Misaligment angle
 
+        Note:
+        - The peg's rotation is here: peg_pose[1][1] in deg
+
         Returns:
             dict: _description_
         """
@@ -396,10 +399,12 @@ class InsertKinovaV1(gym.Env):
             'ee_vel_ctrl': self.ee_vel_ctrl,  # Desired ee vel in task space, output of the controller
             'ee_vel_aug': self.ee_vel_aug,  # Desired ee vel in task space, augmented
             'ee_vel': ee_vel,  # End-effector velocity [m/s, m/s, rad/s]
+            'peg_force': peg_force,
             'peg_force_x': peg_force[0],
             'peg_force_y': peg_force[1],
             'peg_force_z': peg_force[2],
             'peg_force_norm': np.linalg.norm(peg_force),
+            'peg_torque': peg_torque,
             'peg_torque_x': peg_torque[0],
             'peg_torque_y': peg_torque[1],
             'peg_torque_z': peg_torque[2],
@@ -420,7 +425,7 @@ class InsertKinovaV1(gym.Env):
         joint_vels_ideal = self.joint_vels_ideal
         joint_torques = obs['joint_torques']
 
-        # # --- Force-based reward ---
+        # # --- Force-based, Joints ---
         # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
 
         # # --- z-dist, variable ---
@@ -433,14 +438,47 @@ class InsertKinovaV1(gym.Env):
 
         # reward = -(abs(exp_dz - k_peg_dz))
 
-        # --- 2-norm ---
-        z_goal = 0.02
-        x_goal = 0.55
-        goal_array = np.array([x_goal, z_goal])
-        peg_pose = self.info['peg_pose'][0]
-        peg_pose_array = np.array([peg_pose[0], peg_pose[2]])
+        # # --- 2-norm ---
+        # z_goal = 0.02
+        # x_goal = 0.55
+        # goal_array = np.array([x_goal, z_goal])
+        # peg_pose = self.info['peg_pose'][0]
+        # peg_pose_array = np.array([peg_pose[0], peg_pose[2]])
 
-        reward = -np.linalg.norm(goal_array - peg_pose_array)
+        # reward = -np.linalg.norm(goal_array - peg_pose_array)
+
+        # --- 2-norm, v2 ---
+        # Weights
+        k_z = 5
+        k_x = 0
+        k_rot = 0  # 10 deg is -1
+        k_act = 1
+        k_force = 1
+
+        # Reward
+        z_start = 0.09037613998260946
+        z_goal = 0.03
+        x_goal = 0.55
+
+        peg_pose = self.info['peg_pose'][0]
+        peg_rot = self.info['peg_pose'][1][1]
+        peg_force = [self.info['peg_force_x'], self.info['peg_force_y'], self.info['peg_force_z'] - 9.81 * 0.2]
+
+        r_z = (z_start - peg_pose[2]) / (z_start - z_goal)
+
+        r_x = np.abs(x_goal - peg_pose[0])
+
+        r_rot = np.abs(peg_rot)
+
+        r_act = np.sum(np.abs(self.action))
+
+        r_force = np.linalg.norm(peg_force)
+
+        reward = k_z * r_z - k_x * r_x - k_rot * r_rot - k_act * r_act - k_force * r_force
+        reward *= 0.1
+
+        # # --- Force-based, EE ---
+        # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
 
         return reward
 
