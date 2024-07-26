@@ -284,11 +284,17 @@ class InsertKinovaV1(gym.Env):
         #     reward = 0
 
         # --- Success ---
-        success = self._is_success()
+        success, fail = self._is_success()
+
         if success:
             # reward += 10
             self.ep_completed = True
             self.info['is_success'] = success
+
+        if fail:
+            self.terminate = True
+            self.info['is_success'] = success
+            reward = -10
 
         # Done flag
         self.step_count += 1
@@ -541,5 +547,8 @@ class InsertKinovaV1(gym.Env):
         peg_pose = self.info['peg_pose'][0]
         peg_pose_z = peg_pose[2]
         peg_pose_x = peg_pose[0]
+        success = (z_lims[0] <= peg_pose_z <= z_lims[1]) and (x_lims[0] <= peg_pose_x <= x_lims[1])
 
-        return (z_lims[0] <= peg_pose_z <= z_lims[1]) and (x_lims[0] <= peg_pose_x <= x_lims[1])
+        fail = not (x_lims[0] <= peg_pose_x <= x_lims[1])
+
+        return success, fail
