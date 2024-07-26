@@ -333,3 +333,34 @@ class TestInsertKinovaV1:
                 observation, info = env.reset()
 
         env.close()
+
+    def test_contact_(self):
+        """To test contact in the hole"""
+        env = gym.make(
+            'InsertKinova-v1',
+            render_mode='human',
+            socket_x_offset=0.0,
+            viewpoint=['Perspective', 'Global'],
+            eval_mode=True,
+        )
+        # check_env(env)
+        observation, info = env.reset()
+        start_peg_pose_t, start_peg_pose_rpy = info['peg_pose']
+
+        # Move ccw
+        action = np.array([0.0, 0, 0])  # Move Down
+
+        for _ in range(1000):
+            # Down for 1s
+            for _ in range(50):
+                observation, reward, terminated, truncated, info = env.step(action)
+
+            # Rotate CW for 1s
+            action = np.array([0.0, 0.028, 0.2])  # Move Down
+            for _ in range(50):
+                observation, reward, terminated, truncated, info = env.step(action)
+
+            if terminated or truncated:
+                observation, info = env.reset()
+
+        env.close()

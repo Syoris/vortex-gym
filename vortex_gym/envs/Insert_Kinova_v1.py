@@ -286,7 +286,7 @@ class InsertKinovaV1(gym.Env):
         # --- Success ---
         success = self._is_success()
         if success:
-            reward += 10
+            # reward += 10
             self.ep_completed = True
             self.info['is_success'] = success
 
@@ -447,13 +447,13 @@ class InsertKinovaV1(gym.Env):
 
         # reward = -np.linalg.norm(goal_array - peg_pose_array)
 
-        # --- 2-norm, v2 ---
-        # Weights
-        k_z = 5
-        k_x = 0
-        k_rot = 0  # 10 deg is -1
-        k_act = 1
-        k_force = 1
+        # # --- 2-norm, v2 ---
+        # # Weights
+        k_z = 2
+        # k_x = 0
+        # k_rot = 0  # 10 deg is -1
+        # k_act = 1
+        # k_force = 1
 
         # Reward
         z_start = 0.09037613998260946
@@ -474,11 +474,24 @@ class InsertKinovaV1(gym.Env):
 
         r_force = np.linalg.norm(peg_force)
 
-        reward = k_z * r_z - k_x * r_x - k_rot * r_rot - k_act * r_act - k_force * r_force
-        reward *= 0.1
+        # reward = k_z * r_z - k_x * r_x - k_rot * r_rot - k_act * r_act - k_force * r_force
+        # reward *= 0.1
 
         # # --- Force-based, EE ---
-        # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
+        # TODO: Should I do the computations only for the EE or for the peg?
+        ee_vel = self.info['ee_vel']
+        ee_vel_ideal = self.info['ee_vel_ctrl']  # TODO: Aug or ctrl? 'ee_vel_ctrl' or 'ee_vel_aug'
+        peg_force = self.info['peg_force']  # TODO: forces or torques?
+        peg_torque = self.info['peg_torque']
+
+        # Convert vels to rad
+        # ee_vel = np.array([ee_vel[0], ee_vel[1], ee_vel[2]])  # [x, z, rot]
+        # ee_vel_ideal = np.array([ee_vel_ideal[0], ee_vel_ideal[1], np.deg2rad(ee_vel_ideal[2])])  # [x, z, rot]
+
+        # W = np.array([peg_force[0], peg_force[2] - 0.2 * 9.81, peg_torque[1]])  # [fx, fz, tz]
+        W = np.array([1, 1, 2])
+
+        reward = -self.reward_weight * (abs(ee_vel - ee_vel_ideal) @ W + k_z * r_z)
 
         return reward
 
