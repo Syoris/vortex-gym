@@ -28,12 +28,13 @@ class InsertKinovaV1(gym.Env):
         z_insertion=0.07,  # dz of the peg insertion [m]
         speed_misaligment_range=(0.0, 0.0),
         socket_x_range=(0.55, 0.55),  # Range of the socket x position [m] (0.529, 0.529)
-        socket_x_offset=0.005,  # Offset of the socket x position [m]
+        socket_x_offset=0.005,  # Max Offset of the socket x position [m], reached at the end of the training
         eval_mode=False,
         viewpoint=None,
         ctrl_freq=50,
         reward_weight=1,
         action_coeff=[1, 1, 1],
+        curriculum_max_steps=2_500_000,  # Lin increase offset until reaching this number of steps
     ):
         print('[InsertKinovaV1.__init__] Initializing InsertKinovaV1 gym environment')
         # Task parameters
@@ -51,9 +52,11 @@ class InsertKinovaV1(gym.Env):
 
         self.socket_x = 0.550  # X position of the socket [m]
         self.socket_x_range: tuple = socket_x_range
-        self.socket_x_offset = socket_x_offset  # Offset of the socket x position [m]
+        self.socket_x_offset = socket_x_offset  # Max Offset of the socket x position [m]
+        self.socket_x_offset_curr = 0.0  # Current Offset of the socket x position [m]
         self.socket_default_pose = np.array([[1, 0, 0, 0.550], [0, 1, 0, -0.007], [0, 0, 1, 0.0], [0, 0, 0, 1.0]])
         self.randomization_start = 20  # Number of episodes before randomizing the socket position
+        self.curriculum_max_steps = curriculum_max_steps  # Lin increase offset unitl reaching this number of steps
 
         self.eval_mode = eval_mode
 
@@ -124,6 +127,7 @@ class InsertKinovaV1(gym.Env):
 
         self.step_count = 0  # Number of steps taken in the current episode
         self.episode_count = 0  # Number of episodes taken in the current training session
+        self.total_step_count = 0  # Total number of steps taken in the current training session
         self.max_step_per_ep = int(self.max_epoch_time * self.ctrl_freq)  # Maximum number of steps per episode
 
         # Scene Parameters
@@ -178,15 +182,27 @@ class InsertKinovaV1(gym.Env):
     # --------------------------------------------------------------------------------------------
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.total_step_count += self.step_count
         self.step_count = 0
 
-        # Reset vortex
+        # --- Curriculum learning ---
+        if not self.eval_mode:
+            if self.total_step_count < self.curriculum_max_steps:
+                self.socket_x_offset_curr = self.socket_x_offset * (self.total_step_count / self.curriculum_max_steps)
+            else:
+                self.socket_x_offset_curr = self.socket_x_offset
+
+        # In eval, max diff
+        else:
+            self.socket_x_offset_curr = self.socket_x_offset
+
+        # --- Reset vortex ---
         self.vortex_env.reset_saved_frame()
         # self.vortex_env.pause_sim(True)
 
         self.speed_misalignment = np.random.uniform(self.speed_misalignment_range[0], self.speed_misalignment_range[1])
 
-        # Get observation and info
+        # --- Get observation and info ---
         self.obs, self.obs_normalized = self._get_obs()
         self._update_jacobian()
         self.joint_vels_ideal = self._get_ik_vels(desired_vel=np.zeros(3))
@@ -195,7 +211,7 @@ class InsertKinovaV1(gym.Env):
 
         if (self.episode_count > self.randomization_start) or self.eval_mode:
             self.socket_x = np.random.uniform(self.socket_x_range[0], self.socket_x_range[1])
-            socket_x_offset = np.random.uniform(-self.socket_x_offset, self.socket_x_offset)
+            socket_x_offset = np.random.uniform(-self.socket_x_offset_curr, self.socket_x_offset_curr)
             self.socket_x += socket_x_offset
 
             new_socket_pose = self.socket_default_pose.copy()
@@ -252,8 +268,8 @@ class InsertKinovaV1(gym.Env):
         joint_vels_aug = self._get_ik_vels(desired_vel=self.ee_vel_aug)
 
         # Expected joint velocities
-        # self.joint_vels_ideal = self._get_ik_vels(desired_vel=self.ee_vel_ctrl)  # From ctrl
-        self.joint_vels_ideal = self.joints_vel_traj[self.step_count]  # From traj
+        self.joint_vels_ideal = self._get_ik_vels(desired_vel=self.ee_vel_ctrl)  # From ctrl
+        # self.joint_vels_ideal = self.joints_vel_traj[self.step_count]  # From traj
 
         # Apply actions
         self.joint_cmd = np.array([joint_vels_aug[0], joint_vels_aug[1], joint_vels_aug[2]])
@@ -287,14 +303,14 @@ class InsertKinovaV1(gym.Env):
         success, fail = self._is_success()
 
         if success:
-            # reward += 10
             self.ep_completed = True
             self.info['is_success'] = success
+            reward += 10
 
         if fail:
-            self.terminate = True
+            terminated = True
             self.info['is_success'] = success
-            reward = -10
+            reward -= 10
 
         # Done flag
         self.step_count += 1
@@ -402,6 +418,7 @@ class InsertKinovaV1(gym.Env):
             'action': self.action,
             'joint_cmd': self.joint_cmd,  # Command sent to the robot [j2, j4, j6]
             'joint_vels_ideal': self.joint_vels_ideal,  # Expected joint velocities from IK trajectory or controller
+            'joint_vels_ctrl': self.joint_vels_ideal,  # Expected joint velocities from controller
             'ee_vel_ctrl': self.ee_vel_ctrl,  # Desired ee vel in task space, output of the controller
             'ee_vel_aug': self.ee_vel_aug,  # Desired ee vel in task space, augmented
             'ee_vel': ee_vel,  # End-effector velocity [m/s, m/s, rad/s]
@@ -432,7 +449,13 @@ class InsertKinovaV1(gym.Env):
         joint_torques = obs['joint_torques']
 
         # # --- Force-based, Joints ---
-        # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques))
+        # reward = -self.reward_weight * np.sum(abs((joint_vels_ideal - joint_vels) * joint_torques)).
+        # W_joints = np.array([1, 1, 1])
+        joint_nom_torques = np.array([12.392887, -2.9137173, -2.145456])
+        # joint_max_torque = np.array([30.5, 30.5, 6.8])
+        # W_joints = np.abs((joint_torques - joint_nom_torques))  # / joint_max_torque)
+        W_joints = np.array([5, 5, 5])
+        r_joints = np.abs(joint_vels_ideal - joint_vels) @ W_joints
 
         # # --- z-dist, variable ---
         # peg_z_start = 0.09037613998260946
@@ -455,10 +478,10 @@ class InsertKinovaV1(gym.Env):
 
         # # --- 2-norm, v2 ---
         # # Weights
-        k_z = 2
+        k_z = 5
         # k_x = 0
         # k_rot = 0  # 10 deg is -1
-        # k_act = 1
+        k_act = 1
         # k_force = 1
 
         # Reward
@@ -472,34 +495,39 @@ class InsertKinovaV1(gym.Env):
 
         r_z = (z_start - peg_pose[2]) / (z_start - z_goal)
 
-        r_x = np.abs(x_goal - peg_pose[0])
+        # r_x = np.abs(x_goal - peg_pose[0])
 
-        r_rot = np.abs(peg_rot)
+        # r_rot = np.abs(peg_rot)
 
-        r_act = np.sum(np.abs(self.action))
+        r_act = self.action @ self.action  # np.sum(np.abs(self.action))
 
-        r_force = np.linalg.norm(peg_force)
+        # r_force = np.linalg.norm(peg_force)
 
         # reward = k_z * r_z - k_x * r_x - k_rot * r_rot - k_act * r_act - k_force * r_force
         # reward *= 0.1
 
-        # # --- Force-based, EE ---
-        # TODO: Should I do the computations only for the EE or for the peg?
-        ee_vel = self.info['ee_vel']
-        ee_vel_ideal = self.info['ee_vel_ctrl']  # TODO: Aug or ctrl? 'ee_vel_ctrl' or 'ee_vel_aug'
-        peg_force = self.info['peg_force']  # TODO: forces or torques?
-        peg_torque = self.info['peg_torque']
+        # # # --- Force-based, EE ---
+        # # TODO: Should I do the computations only for the EE or for the peg?
+        # ee_vel = self.info['ee_vel']
+        # ee_vel_ideal = self.info['ee_vel_ctrl']  # TODO: Aug or ctrl? 'ee_vel_ctrl' or 'ee_vel_aug'
+        # peg_force = self.info['peg_force']  # TODO: forces or torques?
+        # peg_torque = self.info['peg_torque']
 
-        # Convert vels to rad
-        # ee_vel = np.array([ee_vel[0], ee_vel[1], ee_vel[2]])  # [x, z, rot]
-        # ee_vel_ideal = np.array([ee_vel_ideal[0], ee_vel_ideal[1], np.deg2rad(ee_vel_ideal[2])])  # [x, z, rot]
+        # # Convert vels to rad
+        # # ee_vel = np.array([ee_vel[0], ee_vel[1], ee_vel[2]])  # [x, z, rot]
+        # # ee_vel_ideal = np.array([ee_vel_ideal[0], ee_vel_ideal[1], np.deg2rad(ee_vel_ideal[2])])  # [x, z, rot]
 
-        # W = np.array([peg_force[0], peg_force[2] - 0.2 * 9.81, peg_torque[1]])  # [fx, fz, tz]
-        W = np.array([1, 1, 2])
+        # # W = np.array([peg_force[0], peg_force[2] - 0.2 * 9.81, peg_torque[1]]) * 0.01  # [fx, fz, tz]
+        # W = np.array([5, 5, 5])
+        # r_vel = (abs(ee_vel - ee_vel_ideal) / self.action_coeff) @ np.abs(W)
 
-        reward = -self.reward_weight * (abs(ee_vel - ee_vel_ideal) @ W + k_z * r_z)
+        # REARD
+        # reward = k_z * r_z - r_joints
+        reward = -r_joints - k_act * r_act
 
-        return reward
+        reward_scaled = self.reward_weight * reward
+
+        return reward_scaled
 
     def _update_jacobian(self):
         """Update the Jacobian matrix of the robot and compute the inverse."""
