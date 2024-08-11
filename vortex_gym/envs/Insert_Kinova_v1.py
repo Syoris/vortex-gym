@@ -523,7 +523,7 @@ class InsertKinovaV1(gym.Env):
 
         # REARD
         # reward = k_z * r_z - r_joints
-        reward = -r_joints - k_act * r_act
+        reward = -r_joints  # - k_act * r_act
 
         reward_scaled = self.reward_weight * reward
 
